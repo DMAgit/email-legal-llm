@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = None
     openai_base_url: str | None = None
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = Field(default=1536, gt=0)
 
     azure_search_endpoint: str | None = None
     azure_search_api_key: str | None = None
@@ -56,4 +58,3 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached settings for application runtime."""
     return Settings()
-

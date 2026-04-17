@@ -41,6 +41,14 @@ class ExtractionError(ApplicationError):
     """Raised when a parsed document cannot be converted into structured fields."""
 
 
+class RetrievalError(ApplicationError):
+    """Raised when policy context cannot be retrieved for classification."""
+
+
+class ClassificationError(ApplicationError):
+    """Raised when extracted fields cannot be classified into a risk result."""
+
+
 class OpenAIClientError(ExternalServiceError):
     """Raised when OpenAI cannot produce a usable structured response."""
 
@@ -48,3 +56,14 @@ class OpenAIClientError(ExternalServiceError):
 class OpenAIClientConfigurationError(OpenAIClientError, ConfigurationError):
     """Raised when the OpenAI client cannot be initialized."""
 
+
+class SearchClientError(ExternalServiceError):
+    """Raised when Azure AI Search cannot produce usable retrieval results."""
+
+
+class SearchClientConfigurationError(SearchClientError, ConfigurationError):
+    """Raised when the Azure AI Search client cannot be initialized."""
+
+
+class SearchIndexNotFoundError(SearchClientError):
+    """Raised when the configured Azure AI Search index is missing."""

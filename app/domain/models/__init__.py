@@ -6,7 +6,7 @@ from app.domain.models.email import AttachmentMetadata, InboundEmail
 from app.domain.models.extraction import ContractExtractionResult, DocumentExtraction, DocumentExtractionError
 from app.domain.models.ingestion import AttachmentProcessingSummary, InboundEmailProcessingResult
 from app.domain.models.persistence import ProcessingOutcome
-from app.domain.models.retrieval import RetrievedContextChunk
+from app.domain.models.retrieval import RetrievedContextChunk, RetrievalResult
 
 __all__ = [
     "AttachmentProcessingSummary",
@@ -22,4 +22,5 @@ __all__ = [
     "ParsedDocument",
     "ProcessingOutcome",
     "RetrievedContextChunk",
+    "RetrievalResult",
 ]

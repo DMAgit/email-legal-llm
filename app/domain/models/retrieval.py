@@ -1,6 +1,6 @@
 """Retrieved policy context models."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RetrievedContextChunk(BaseModel):
@@ -11,5 +11,11 @@ class RetrievedContextChunk(BaseModel):
     doc_type: str
     clause_type: str | None = None
     content: str
-    score: float
+    score: float = Field(ge=0.0)
 
+
+class RetrievalResult(BaseModel):
+    """Retrieved chunks plus non-fatal retrieval warnings."""
+
+    chunks: list[RetrievedContextChunk] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
