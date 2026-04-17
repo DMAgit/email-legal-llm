@@ -11,6 +11,11 @@ from app.domain.models.email import AttachmentMetadata
 from app.infra.parsers.base import document_id_for_path
 from app.infra.parsers.exceptions import ParserDependencyError, ParserError
 
+GENERIC_CONTENT_TYPES = {
+    "application/octet-stream",
+    "binary/octet-stream",
+}
+
 
 class UnstructuredParser:
     """Extract elements and RAG-ready chunks with `unstructured`."""
@@ -40,7 +45,7 @@ class UnstructuredParser:
         try:
             elements = partition(
                 filename=str(path),
-                content_type=metadata.content_type,
+                content_type=self._partition_content_type(metadata),
             )
             chunks = chunk_elements(
                 elements,
@@ -66,6 +71,16 @@ class UnstructuredParser:
             parse_warnings=warnings,
             confidence_hint=0.9 if raw_text else 0.3,
         )
+
+    def _partition_content_type(self, metadata: AttachmentMetadata) -> str | None:
+        content_type = (metadata.content_type or "").split(";", maxsplit=1)[0].strip().lower()
+        if content_type and content_type not in GENERIC_CONTENT_TYPES:
+            return content_type
+        if self.file_type == "csv":
+            return "text/csv"
+        if self.file_type == "pdf":
+            return "application/pdf"
+        return None
 
     def _raw_text(self, elements: list[Any]) -> str:
         return "\n\n".join(text for element in elements if (text := str(element).strip()))

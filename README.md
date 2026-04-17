@@ -3,9 +3,9 @@
 Email-driven contract risk analyzer foundation for a take-home style project.
 
 The current milestone accepts inbound Mailgun-style email webhooks, stores
-attachments locally, detects PDF/image/CSV files, and parses attachments into
-normalized raw text and chunks. Later milestones add structured extraction,
-retrieval, classification, and persistence.
+attachments locally, detects PDF/image/CSV files, parses attachments into
+normalized raw text and chunks, and can extract structured contract fields
+through the OpenAI API.
 
 ## Local Setup
 
@@ -39,6 +39,32 @@ under `data/uploads/{process_id}/`.
 Attachment parsing and chunking use the Unstructured open source library.
 Image/PDF OCR quality depends on the local Unstructured extras and system OCR
 support available on the host.
+
+Structured extraction uses `config/models/extraction.yaml`,
+`app/infra/llm/prompts/extraction_prompt.txt`, and the OpenAI SDK. Set
+`OPENAI_API_KEY` in `.env` before calling extraction.
+
+Demo a parsed document directly:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8000/extractions/contract `
+  -ContentType application/json `
+  -Body (@{
+    document_id = "demo-doc"
+    filename = "contract.txt"
+    file_type = "txt"
+    parser_name = "manual"
+    raw_text = "Vendor: Acme Corp`nPayment Terms: Net 60"
+  } | ConvertTo-Json)
+```
+
+Or ask the Mailgun webhook to extract after parsing:
+
+```powershell
+POST http://127.0.0.1:8000/webhooks/mailgun/inbound?extract=true
+```
 
 ## Tests
 

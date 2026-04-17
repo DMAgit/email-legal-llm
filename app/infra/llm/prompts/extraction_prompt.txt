@@ -1,5 +1,13 @@
 Extract structured contract fields from the supplied document text.
 
-Return only fields supported by the response schema. Do not guess unknown values;
-use null for missing fields and list important missing fields explicitly.
+Use only evidence present in the document. Do not guess, infer missing business
+terms, or fill placeholders from general knowledge. Return null for unknown
+string fields and include important absent fields in key_missing_fields.
 
+Set extraction_confidence between 0 and 1 based on how directly the document
+supports the extracted fields. Return only JSON that matches the response schema.
+
+Field meanings are strict. payment_terms means payment timing or conditions such
+as Net 30, Net 60, due on receipt, or payment due within a stated number of days.
+Do not put standalone prices, spend, invoice totals, or table amounts in
+payment_terms.

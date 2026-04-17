@@ -11,7 +11,7 @@ def test_model_registry_loads_yaml_configs() -> None:
     registry = ModelRegistry.from_directory(Path("config/models"))
 
     assert registry.names() == ["classification", "extraction"]
-    assert registry.get("extraction").model == "gpt-4.1-mini"
+    assert registry.get("extraction").model == "gpt-4o-mini"
 
 
 def test_model_registry_rejects_unknown_name() -> None:
@@ -19,4 +19,3 @@ def test_model_registry_rejects_unknown_name() -> None:
 
     with pytest.raises(KeyError):
         registry.get("missing")
-

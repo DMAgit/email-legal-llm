@@ -17,3 +17,18 @@ class ContractExtractionResult(BaseModel):
     key_missing_fields: list[str] = Field(default_factory=list)
     extraction_confidence: float = Field(ge=0.0, le=1.0)
 
+
+class DocumentExtraction(BaseModel):
+    """Validated extraction output tied back to a parsed document."""
+
+    document_id: str
+    filename: str
+    extraction: ContractExtractionResult
+
+
+class DocumentExtractionError(BaseModel):
+    """Non-fatal extraction failure for a single parsed document."""
+
+    document_id: str
+    filename: str
+    error: str

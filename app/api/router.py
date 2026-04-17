@@ -3,10 +3,12 @@
 from fastapi import APIRouter
 
 from app.api.deps import ModelRegistryDep, SettingsDep
+from app.api.extraction import router as extraction_router
 from app.api.webhook import router as webhook_router
 from app.domain.models.system import HealthResponse, ModelRegistryResponse
 
 router = APIRouter()
+router.include_router(extraction_router)
 router.include_router(webhook_router)
 
 

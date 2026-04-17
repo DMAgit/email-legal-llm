@@ -6,9 +6,12 @@ import time
 from fastapi import APIRouter, HTTPException, Request, status
 from starlette.datastructures import FormData
 
-from app.api.deps import SettingsDep
+from app.api.deps import ModelRegistryDep, SettingsDep
 from app.domain.models.email import AttachmentMetadata
+from app.domain.models.extraction import DocumentExtraction, DocumentExtractionError
 from app.domain.models.ingestion import AttachmentProcessingSummary, InboundEmailProcessingResult
+from app.infra.llm.openai_client import OpenAIClient, OpenAIClientConfigurationError
+from app.services.extraction_service import ExtractionService
 from app.services.ingestion_service import IngestionError, IngestionService
 from app.services.parsing_service import ParsingService
 
@@ -21,8 +24,13 @@ MAILGUN_SIGNATURE_MAX_AGE_SECONDS = 15 * 60
     response_model=InboundEmailProcessingResult,
     status_code=status.HTTP_200_OK,
 )
-async def mailgun_inbound(request: Request, settings: SettingsDep) -> InboundEmailProcessingResult:
-    """Receive a Mailgun inbound email webhook and parse stored attachments."""
+async def mailgun_inbound(
+    request: Request,
+    settings: SettingsDep,
+    registry: ModelRegistryDep,
+    extract: bool = False,
+) -> InboundEmailProcessingResult:
+    """Receive a Mailgun inbound email webhook and optionally extract contract fields."""
     try:
         form = await request.form()
     except AssertionError as exc:
@@ -42,12 +50,37 @@ async def mailgun_inbound(request: Request, settings: SettingsDep) -> InboundEma
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     documents, errors = parsing_service.parse_attachments(ingested.attachments)
+    extractions: list[DocumentExtraction] = []
+    extraction_errors: list[DocumentExtractionError] = []
+
+    if extract and documents:
+        try:
+            extraction_service = ExtractionService(
+                model_registry=registry,
+                prompt_dir=settings.prompt_dir,
+                llm_client=OpenAIClient(
+                    api_key=settings.openai_api_key,
+                    base_url=settings.openai_base_url,
+                ),
+            )
+            extractions, extraction_errors = extraction_service.extract_documents(documents)
+        except OpenAIClientConfigurationError as exc:
+            extraction_errors = [
+                DocumentExtractionError(
+                    document_id=document.document_id,
+                    filename=document.filename,
+                    error=str(exc),
+                )
+                for document in documents
+            ]
 
     return InboundEmailProcessingResult(
         process_id=ingested.process_id,
         email=ingested.email,
         attachments=[_public_attachment(attachment) for attachment in ingested.attachments],
         documents=documents,
+        extractions=extractions,
+        extraction_errors=extraction_errors,
         errors=errors,
     )
 

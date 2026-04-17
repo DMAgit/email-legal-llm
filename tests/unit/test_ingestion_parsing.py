@@ -74,6 +74,23 @@ def test_unstructured_parser_returns_text_chunks_and_table_metadata(tmp_path: Pa
     assert "<table>" in parsed.extracted_tables[0]["html"]
 
 
+def test_unstructured_parser_uses_detected_type_for_generic_upload_mime(tmp_path: Path) -> None:
+    csv_path = tmp_path / "contract.csv"
+    csv_path.write_text("vendor,amount\nAcme Legal,1200\n", encoding="utf-8")
+    metadata = AttachmentMetadata(
+        filename="contract.csv",
+        content_type="application/octet-stream",
+        size_bytes=csv_path.stat().st_size,
+        storage_path=str(csv_path),
+    )
+
+    parsed = UnstructuredParser(file_type="csv").parse(csv_path, metadata)
+
+    assert parsed.file_type == "csv"
+    assert "Acme Legal" in parsed.raw_text
+    assert parsed.parse_warnings == []
+
+
 def test_ingestion_service_persists_uploads(tmp_path: Path) -> None:
     form = FormData(
         [
