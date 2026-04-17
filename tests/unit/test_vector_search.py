@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from app.infra.search.azure_search_client import AzureSearchClient
 from app.core.exceptions import SearchClientError
-from scripts.seed_search_index import VECTOR_FIELD_NAME, _upload_documents, embed_documents
+from scripts.seed_search_index import (
+    VECTOR_FIELD_NAME,
+    _historical_review_documents,
+    _upload_documents,
+    _vendor_documents,
+    embed_documents,
+)
 
 import pytest
 
@@ -128,3 +135,22 @@ def test_upload_documents_raises_when_azure_rejects_documents() -> None:
 
     with pytest.raises(SearchClientError, match="wrong dimensions"):
         _upload_documents(client, [{"id": "doc-1"}])
+
+
+def test_vendor_documents_include_tier_and_inferred_risk() -> None:
+    documents = _vendor_documents(Path("data/kb/vendors.csv"))
+
+    globex = next(document for document in documents if document["label"] == "Globex AI")
+    assert "Tier: tier_1" in globex["content"]
+    assert globex["risk_level"] == "high"
+
+
+def test_historical_reviews_use_clause_text_decision_and_reason() -> None:
+    documents = _historical_review_documents(Path("data/kb/historical_reviews.json"))
+
+    first = documents[0]
+    assert first["doc_type"] == "historical_review"
+    assert "Decision: legal_review" in first["content"]
+    assert "Clause text:" in first["content"]
+    assert "Reason:" in first["content"]
+    assert first["risk_level"] == "high"

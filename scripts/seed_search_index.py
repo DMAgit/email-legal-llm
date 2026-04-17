@@ -34,6 +34,8 @@ def build_documents(kb_dir: Path = DEFAULT_KB_DIR) -> list[dict[str, Any]]:
     """Build searchable Azure documents from local demo KB files."""
     documents: list[dict[str, Any]] = []
     for path in sorted(kb_dir.glob("*.md")):
+        if path.name == "approved_clause_library.md" and (kb_dir / "clause_library.md").exists():
+            continue
         documents.extend(_markdown_documents(path, _markdown_doc_type(path)))
     vendor_path = kb_dir / "vendors.csv"
     if vendor_path.exists():
@@ -201,8 +203,9 @@ def _vendor_documents(path: Path) -> list[dict[str, Any]]:
         for index, row in enumerate(csv.DictReader(file)):
             vendor_name = row.get("vendor_name", "").strip()
             status = row.get("status", "").strip()
+            tier = row.get("tier", "").strip()
             notes = row.get("notes", "").strip().rstrip(".")
-            content = f"Vendor {vendor_name}. Status: {status}. Notes: {notes}."
+            content = f"Vendor {vendor_name}. Status: {status}. Tier: {tier}. Notes: {notes}."
             documents.append(
                 _document(
                     source=path.name,
@@ -210,7 +213,7 @@ def _vendor_documents(path: Path) -> list[dict[str, Any]]:
                     label=vendor_name or "vendor",
                     content=content,
                     index=index,
-                    risk_level=row.get("risk_level"),
+                    risk_level=row.get("risk_level") or _vendor_risk_level(status=status, tier=tier),
                 )
             )
     return documents
@@ -220,23 +223,27 @@ def _historical_review_documents(path: Path) -> list[dict[str, Any]]:
     records = json.loads(path.read_text(encoding="utf-8"))
     documents: list[dict[str, Any]] = []
     for index, record in enumerate(records):
+        decision = str(record.get("decision") or record.get("outcome") or "unknown")
+        clause_text = str(record.get("clause_text") or record.get("summary") or "")
+        reason = str(record.get("reason") or record.get("summary") or "")
         content = " ".join(
             [
-                f"Vendor: {record.get('vendor_name', 'unknown')}.",
-                f"Outcome: {record.get('outcome', 'unknown')}.",
-                f"Risk: {record.get('risk_level', 'unknown')}.",
-                f"Summary: {record.get('summary', '')}",
+                f"Clause type: {record.get('clause_type', 'unknown')}.",
+                f"Decision: {decision}.",
+                f"Clause text: {clause_text}",
+                f"Reason: {reason}",
             ]
         )
         documents.append(
             _document(
                 source=path.name,
                 doc_type="historical_review",
-                label=str(record.get("vendor_name", "historical review")),
+                label=f"{record.get('clause_type', 'unknown')} {decision}",
                 content=content,
                 index=index,
                 clause_type=record.get("clause_type"),
-                risk_level=record.get("risk_level"),
+                risk_level=record.get("risk_level") or _decision_risk_level(decision),
+                infer_risk_level=False,
             )
         )
     return documents
@@ -251,6 +258,7 @@ def _document(
     index: int,
     clause_type: str | None = None,
     risk_level: str | None = None,
+    infer_risk_level: bool = True,
 ) -> dict[str, Any]:
     clause = clause_type or _infer_clause_type(label=label, content=content)
     return {
@@ -260,7 +268,7 @@ def _document(
         "clause_type": clause,
         "source": source,
         "label": label,
-        "risk_level": risk_level or _infer_risk_level(content),
+        "risk_level": risk_level or (_infer_risk_level(content) if infer_risk_level else None),
     }
 
 
@@ -378,15 +386,51 @@ def _infer_risk_level(content: str) -> str | None:
     lowered = content.lower()
     if any(
         term in lowered
-        for term in ("prohibited", "must escalate", "requires legal review", "unlimited liability")
+        for term in (
+            "prohibited",
+            "prohibited clause",
+            "must escalate",
+            "requires legal review",
+            "unlimited liability",
+        )
     ) or "legal review" in lowered:
         return "high"
     if any(
         term in lowered
-        for term in ("requires review", "procurement review", "procurement approval", "non-standard", "net 60")
+        for term in (
+            "negotiable",
+            "requires review",
+            "procurement review",
+            "procurement approval",
+            "non-standard",
+            "net 60",
+        )
     ):
         return "medium"
-    if any(term in lowered for term in ("approved", "standard", "low risk")):
+    if any(term in lowered for term in ("acceptable", "approved", "standard", "low risk")):
+        return "low"
+    return None
+
+
+def _vendor_risk_level(*, status: str, tier: str) -> str | None:
+    status_lowered = status.lower()
+    tier_lowered = tier.lower()
+    if status_lowered in {"blocked", "watchlist"}:
+        return "high"
+    if status_lowered == "conditional" or tier_lowered == "tier_1":
+        return "medium"
+    if status_lowered == "approved":
+        return "low"
+    return None
+
+
+def _decision_risk_level(decision: str) -> str | None:
+    decision_lowered = decision.lower()
+    if decision_lowered == "legal_review":
+        return "high"
+    if decision_lowered == "procurement_review":
+        return "medium"
+    if decision_lowered == "auto_store":
         return "low"
     return None
 

@@ -1,23 +1,74 @@
 [
   {
-    "vendor_name": "Globex AI",
-    "risk_level": "high",
-    "clause_type": "data_usage",
-    "outcome": "legal_review",
-    "summary": "Rejected vendor language allowing AI training on customer data without explicit customer approval."
-  },
-  {
-    "vendor_name": "Northwind Services",
-    "risk_level": "medium",
-    "clause_type": "payment_terms",
-    "outcome": "procurement_review",
-    "summary": "Procurement approved Net 60 only after removing annual prepayment."
-  },
-  {
-    "vendor_name": "Acme Analytics",
-    "risk_level": "low",
     "clause_type": "liability",
-    "outcome": "auto_store",
-    "summary": "Approved with mutual twelve-month fees liability cap and standard confidentiality carveouts."
+    "clause_text": "Customer shall indemnify vendor for all third-party claims and vendor's total liability shall not exceed one month of fees.",
+    "decision": "legal_review",
+    "reason": "Customer-only indemnity and vendor liability cap below policy minimum created unacceptable legal risk."
+  },
+  {
+    "clause_type": "liability",
+    "clause_text": "Each party's aggregate liability is capped at fees paid in the twelve months before the claim with carveouts for confidentiality, security breaches, infringement, and willful misconduct.",
+    "decision": "auto_store",
+    "reason": "Mutual twelve-month cap and expected carveouts matched the approved liability position."
+  },
+  {
+    "clause_type": "data_usage",
+    "clause_text": "Vendor may use customer data, prompts, outputs, and support tickets to train and improve artificial intelligence models used across vendor products.",
+    "decision": "legal_review",
+    "reason": "AI training on customer data is prohibited unless legal approves explicit written language."
+  },
+  {
+    "clause_type": "data_usage",
+    "clause_text": "Vendor may process customer data only to provide and secure the services and may create aggregated metrics that do not identify customer or individuals.",
+    "decision": "auto_store",
+    "reason": "Data usage was limited to service delivery and non-identifying aggregated metrics."
+  },
+  {
+    "clause_type": "payment_terms",
+    "clause_text": "Fees are invoiced annually in advance and due Net 45. Customer may dispute invoices in good faith.",
+    "decision": "procurement_review",
+    "reason": "Annual prepayment required procurement approval even though invoice dispute rights were preserved."
+  },
+  {
+    "clause_type": "payment_terms",
+    "clause_text": "Invoices are due Net 30 after receipt of a valid invoice and customer may withhold disputed amounts in good faith.",
+    "decision": "auto_store",
+    "reason": "Payment terms matched policy and preserved invoice dispute rights."
+  },
+  {
+    "clause_type": "termination",
+    "clause_text": "Vendor may suspend or terminate services immediately for suspected breach and customer must pay all fees through the end of the term.",
+    "decision": "legal_review",
+    "reason": "Vendor-only immediate suspension and accelerated payment obligations required legal review."
+  },
+  {
+    "clause_type": "termination",
+    "clause_text": "Either party may terminate for uncured material breach after 30 days notice and vendor will delete or return customer data within 30 days after termination.",
+    "decision": "auto_store",
+    "reason": "Termination rights and post-termination data handling matched policy."
+  },
+  {
+    "clause_type": "renewal",
+    "clause_text": "The subscription renews automatically unless either party gives notice at least 90 days before renewal. Renewal fees may increase to vendor's then-current list price.",
+    "decision": "procurement_review",
+    "reason": "Notice period exceeded 60 days and renewal pricing was uncapped."
+  },
+  {
+    "clause_type": "governing_law",
+    "clause_text": "This agreement is governed by the laws of a non-preferred foreign jurisdiction and all disputes must be brought exclusively in vendor's local courts.",
+    "decision": "legal_review",
+    "reason": "Foreign governing law and exclusive vendor forum fell outside preferred jurisdictions."
+  },
+  {
+    "clause_type": "data_usage",
+    "clause_text": "Vendor may use subprocessors listed online and will provide notice of material changes. Customer may object to new subprocessors that process personal data.",
+    "decision": "manual_review",
+    "reason": "Subprocessor language may be acceptable, but the record lacked the DPA and security exhibit needed for approval."
+  },
+  {
+    "clause_type": "unknown",
+    "clause_text": "The uploaded document contains a signature page and pricing table but no liability, data usage, termination, or renewal language.",
+    "decision": "manual_review",
+    "reason": "Key clauses were missing, so the reviewer could not confirm policy alignment."
   }
 ]

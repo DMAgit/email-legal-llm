@@ -1,5 +1,10 @@
-vendor_name,status,risk_level,notes
-Acme Analytics,approved,low,Existing vendor with approved DPA and standard Net 30 payment terms.
-Globex AI,watchlist,high,Prior review flagged broad customer data training rights.
-Northwind Services,conditional,medium,Approved only with liability cap and no annual prepayment.
-Contoso Legal Ops,approved,low,Approved clause library language on liability and termination.
+vendor_name,status,tier,notes
+Acme Analytics,approved,tier_2,Existing vendor with approved DPA SOC 2 Type II and standard Net 30 payment terms.
+Globex AI,watchlist,tier_1,Prior review flagged broad customer data training rights and AI subprocessor opacity.
+Northwind Services,conditional,tier_2,Approved only with liability cap at twelve months fees and no annual prepayment.
+Contoso Legal Ops,approved,tier_3,Approved clause library language on liability termination and confidentiality.
+BrightMarket Data,watchlist,tier_1,Marketing analytics vendor requires legal review for data sharing and AI enrichment language.
+LedgerWorks Finance,approved,tier_2,Finance operations vendor approved with Net 45 and standard security exhibit.
+Atlas Cloud Hosting,conditional,tier_1,Infrastructure vendor must include DPA breach notice and data deletion commitments.
+PaperTrail Signatures,approved,tier_3,Low-risk e-signature workflow vendor with standard MSA and acceptable governing law.
+OmniRecruit AI,blocked,tier_1,Blocked until vendor removes AI model training rights from candidate and employee data.
