@@ -1,0 +1,5 @@
+Extract structured contract fields from the supplied document text.
+
+Return only fields supported by the response schema. Do not guess unknown values;
+use null for missing fields and list important missing fields explicitly.
+
