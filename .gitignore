@@ -14,3 +14,5 @@ venv/
 
 data/uploads/*
 !data/uploads/.gitkeep
+
+architecture_files/*

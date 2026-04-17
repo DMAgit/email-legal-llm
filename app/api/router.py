@@ -3,9 +3,11 @@
 from fastapi import APIRouter
 
 from app.api.deps import ModelRegistryDep, SettingsDep
+from app.api.webhook import router as webhook_router
 from app.domain.models.system import HealthResponse, ModelRegistryResponse
 
 router = APIRouter()
+router.include_router(webhook_router)
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -23,4 +25,3 @@ def health(settings: SettingsDep, registry: ModelRegistryDep) -> HealthResponse:
 def model_configs(registry: ModelRegistryDep) -> ModelRegistryResponse:
     """Return loaded YAML model configuration names and public values."""
     return ModelRegistryResponse(configs=registry.public_configs())
-
