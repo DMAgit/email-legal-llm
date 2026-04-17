@@ -8,7 +8,7 @@ from typing import Protocol
 
 from pydantic import ValidationError
 
-from app.core.exceptions import ExtractionError
+from app.core.exceptions import ConfigurationError, ExtractionError
 from app.core.model_registry import ModelConfig, ModelRegistry
 from app.domain.models.document import ParsedDocument
 from app.domain.models.extraction import (
@@ -17,6 +17,7 @@ from app.domain.models.extraction import (
     DocumentExtractionError,
 )
 from app.infra.llm.openai_client import OpenAIClientError
+from app.infra.llm.prompt_loader import PromptTemplate, PromptTemplateLoader
 
 
 class StructuredLLMClient(Protocol):
@@ -57,12 +58,16 @@ class ExtractionService:
 
         model_config = self._model_config()
         prompt = self._load_prompt(model_config)
-        user_content = self._document_payload(document, raw_text)
+        document_payload = self._document_payload(document, raw_text)
+        try:
+            user_content = prompt.render_user(document_payload=document_payload)
+        except ConfigurationError as exc:
+            raise ExtractionError(str(exc)) from exc
 
         try:
             response = self.llm_client.create_structured_output(
                 model_config=model_config,
-                system_prompt=prompt,
+                system_prompt=prompt.system,
                 user_content=user_content,
                 schema_model=ContractExtractionResult,
             )
@@ -118,22 +123,12 @@ class ExtractionService:
             )
         return config
 
-    def _load_prompt(self, model_config: ModelConfig) -> str:
+    def _load_prompt(self, model_config: ModelConfig) -> PromptTemplate:
         template_name = model_config.prompt_template or "extraction_prompt_v1"
-        path = self._prompt_path(template_name)
         try:
-            prompt = path.read_text(encoding="utf-8").strip()
-        except OSError as exc:
-            raise ExtractionError(f"Extraction prompt could not be read: {path}.") from exc
-
-        if not prompt:
-            raise ExtractionError(f"Extraction prompt is empty: {path}.")
-        return prompt
-
-    def _prompt_path(self, template_name: str) -> Path:
-        if template_name == "extraction_prompt_v1":
-            return self.prompt_dir / "extraction_prompt.txt"
-        return self.prompt_dir / f"{template_name}.txt"
+            return PromptTemplateLoader(self.prompt_dir).load(template_name)
+        except ConfigurationError as exc:
+            raise ExtractionError(str(exc)) from exc
 
     def _document_payload(self, document: ParsedDocument, raw_text: str) -> str:
         tables = [

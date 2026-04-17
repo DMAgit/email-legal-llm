@@ -41,7 +41,7 @@ Image/PDF OCR quality depends on the local Unstructured extras and system OCR
 support available on the host.
 
 Structured extraction uses `config/models/extraction.yaml`,
-`app/infra/llm/prompts/extraction_prompt.txt`, and the OpenAI SDK. Set
+`app/infra/llm/prompts/extraction_prompt.yaml`, and the OpenAI SDK. Set
 `OPENAI_API_KEY` in `.env` before calling extraction.
 
 Demo a parsed document directly:

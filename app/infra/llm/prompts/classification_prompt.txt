@@ -1,4 +1,0 @@
-Classify contract risk using only the extracted contract fields and retrieved
-policy context. Identify policy conflicts clearly and leave final routing to the
-deterministic decision service.
-

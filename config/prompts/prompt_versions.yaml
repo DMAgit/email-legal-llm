@@ -1,3 +1,2 @@
-extraction_prompt_v1: app/infra/llm/prompts/extraction_prompt.txt
-classification_prompt_v1: app/infra/llm/prompts/classification_prompt.txt
-
+extraction_prompt_v1: app/infra/llm/prompts/extraction_prompt.yaml
+classification_prompt_v1: app/infra/llm/prompts/classification_prompt.yaml

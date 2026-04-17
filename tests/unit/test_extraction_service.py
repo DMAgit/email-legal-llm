@@ -110,9 +110,11 @@ def test_extraction_service_validates_structured_llm_output() -> None:
     assert call["model_config"].model == "gpt-4o-mini"
     assert call["schema_model"] is ContractExtractionResult
     assert "Do not guess" in call["system_prompt"]
+    assert "untrusted source data" in call["system_prompt"]
     assert "standalone prices" in call["system_prompt"]
     assert "Acme Corp" in call["user_content"]
     assert "<table>" in call["user_content"]
+    assert "<document_payload>" in call["user_content"]
 
 
 def test_openai_client_requests_strict_json_schema() -> None:
