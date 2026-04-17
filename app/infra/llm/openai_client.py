@@ -7,17 +7,10 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
+from app.core.exceptions import OpenAIClientConfigurationError, OpenAIClientError
 from app.core.model_registry import ModelConfig
 
 SchemaModel = TypeVar("SchemaModel", bound=BaseModel)
-
-
-class OpenAIClientError(RuntimeError):
-    """Raised when OpenAI cannot produce a usable structured response."""
-
-
-class OpenAIClientConfigurationError(OpenAIClientError):
-    """Raised when the OpenAI client cannot be initialized."""
 
 
 class OpenAIClient:

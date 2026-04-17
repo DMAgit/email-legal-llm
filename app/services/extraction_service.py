@@ -8,6 +8,7 @@ from typing import Protocol
 
 from pydantic import ValidationError
 
+from app.core.exceptions import ExtractionError
 from app.core.model_registry import ModelConfig, ModelRegistry
 from app.domain.models.document import ParsedDocument
 from app.domain.models.extraction import (
@@ -30,10 +31,6 @@ class StructuredLLMClient(Protocol):
         schema_model: type[ContractExtractionResult],
     ) -> dict:
         """Return a JSON object generated under the supplied response schema."""
-
-
-class ExtractionError(RuntimeError):
-    """Raised when a parsed document cannot be converted into structured fields."""
 
 
 class ExtractionService:

@@ -1,13 +1,6 @@
-"""Parser-specific exceptions."""
+"""Parser exception names kept at the parser package boundary."""
+
+from app.core.exceptions import ParserDependencyError, ParserError, UnsupportedFileTypeError
 
 
-class ParserError(Exception):
-    """Base exception for recoverable parser failures."""
-
-
-class ParserDependencyError(ParserError):
-    """Raised when an optional parser dependency is not installed."""
-
-
-class UnsupportedFileTypeError(ParserError):
-    """Raised when no parser can handle an attachment."""
+__all__ = ["ParserDependencyError", "ParserError", "UnsupportedFileTypeError"]

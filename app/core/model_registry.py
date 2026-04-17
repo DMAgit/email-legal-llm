@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+
+from app.core.exceptions import ModelConfigError
 
 
 class ModelConfig(BaseModel):
@@ -31,27 +33,35 @@ class ModelRegistry:
     def from_directory(cls, config_dir: Path) -> "ModelRegistry":
         """Load every YAML model config from a directory."""
         if not config_dir.exists():
-            raise FileNotFoundError(f"Model config directory does not exist: {config_dir}")
+            raise ModelConfigError(f"Model config directory does not exist: {config_dir}")
 
         configs: dict[str, ModelConfig] = {}
         for path in sorted([*config_dir.glob("*.yaml"), *config_dir.glob("*.yml")]):
             raw_config = cls._read_yaml(path)
-            config = ModelConfig.model_validate(raw_config)
+            try:
+                config = ModelConfig.model_validate(raw_config)
+            except ValidationError as exc:
+                raise ModelConfigError(f"Invalid model config in {path}: {exc}") from exc
             if config.name in configs:
-                raise ValueError(f"Duplicate model config name: {config.name}")
+                raise ModelConfigError(f"Duplicate model config name: {config.name}")
             configs[config.name] = config
 
         if not configs:
-            raise ValueError(f"No model config files found in {config_dir}")
+            raise ModelConfigError(f"No model config files found in {config_dir}")
         return cls(configs)
 
     @staticmethod
     def _read_yaml(path: Path) -> dict[str, Any]:
         """Read a YAML file and ensure it contains a mapping."""
-        with path.open("r", encoding="utf-8") as file:
-            data = yaml.safe_load(file)
+        try:
+            with path.open("r", encoding="utf-8") as file:
+                data = yaml.safe_load(file)
+        except yaml.YAMLError as exc:
+            raise ModelConfigError(f"Invalid YAML model config: {path}") from exc
+        except OSError as exc:
+            raise ModelConfigError(f"Could not read model config: {path}") from exc
         if not isinstance(data, dict):
-            raise ValueError(f"Model config must be a mapping: {path}")
+            raise ModelConfigError(f"Model config must be a mapping: {path}")
         return data
 
     def get(self, name: str) -> ModelConfig:
@@ -71,4 +81,3 @@ class ModelRegistry:
             name: config.model_dump()
             for name, config in sorted(self._configs.items())
         }
-

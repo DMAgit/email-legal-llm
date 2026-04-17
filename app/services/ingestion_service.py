@@ -10,11 +10,8 @@ from uuid import uuid4
 
 from starlette.datastructures import FormData, UploadFile
 
+from app.core.exceptions import IngestionError
 from app.domain.models.email import AttachmentMetadata, InboundEmail
-
-
-class IngestionError(ValueError):
-    """Raised when an inbound webhook payload cannot be normalized."""
 
 
 @dataclass(frozen=True)
