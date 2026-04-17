@@ -1,0 +1,5 @@
+vendor_name,status,risk_level,notes
+Acme Analytics,approved,low,Existing vendor with approved DPA and standard Net 30 payment terms.
+Globex AI,watchlist,high,Prior review flagged broad customer data training rights.
+Northwind Services,conditional,medium,Approved only with liability cap and no annual prepayment.
+Contoso Legal Ops,approved,low,Approved clause library language on liability and termination.

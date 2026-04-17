@@ -1,0 +1,23 @@
+[
+  {
+    "vendor_name": "Globex AI",
+    "risk_level": "high",
+    "clause_type": "data_usage",
+    "outcome": "legal_review",
+    "summary": "Rejected vendor language allowing AI training on customer data without explicit customer approval."
+  },
+  {
+    "vendor_name": "Northwind Services",
+    "risk_level": "medium",
+    "clause_type": "payment_terms",
+    "outcome": "procurement_review",
+    "summary": "Procurement approved Net 60 only after removing annual prepayment."
+  },
+  {
+    "vendor_name": "Acme Analytics",
+    "risk_level": "low",
+    "clause_type": "liability",
+    "outcome": "auto_store",
+    "summary": "Approved with mutual twelve-month fees liability cap and standard confidentiality carveouts."
+  }
+]
