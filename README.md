@@ -30,6 +30,7 @@ SQLite stores process runs, email metadata, attachments, parsed documents, extra
   - `manual_review`
 - Auditable persistence in SQLite
 - Process status and review queue endpoints for inspection
+- In-process `/metrics` endpoint with HTTP counters and OpenAI request volume
 
 ## Prerequisites
 
@@ -103,12 +104,15 @@ uvicorn app.main:app --reload
 Useful endpoints:
 
 * `GET http://127.0.0.1:8000/health`
+* `GET http://127.0.0.1:8000/metrics`
 * `GET http://127.0.0.1:8000/model-configs`
 * `POST http://127.0.0.1:8000/webhooks/mailgun/inbound`
 * `GET http://127.0.0.1:8000/processes/{process_id}`
 * `GET http://127.0.0.1:8000/reviews`
 
 The process-status endpoint returns bounded parser summaries, extraction fields, retrieved context excerpts, classification, review state, timestamps, and errors. It does not return full raw document bodies.
+
+The metrics endpoint returns runtime uptime, HTTP request counts and durations, and OpenAI chat/embedding call totals, including approximate sent payload characters, input text characters, response text characters, and token usage when the provider returns it.
 
 ## Local Testing Without Mailgun
 

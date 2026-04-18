@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import ModelRegistryDep, SettingsDep
+from app.api.deps import MetricsCollectorDep, ModelRegistryDep, SettingsDep
 from app.domain.models.document import ParsedDocument
 from app.domain.models.extraction import DocumentExtraction
 from app.infra.llm.openai_client import OpenAIClient, OpenAIClientConfigurationError
@@ -16,12 +16,18 @@ router = APIRouter(prefix="/extractions", tags=["extractions"])
     response_model=DocumentExtraction,
     status_code=status.HTTP_200_OK,
 )
-def extract_contract(document: ParsedDocument, settings: SettingsDep, registry: ModelRegistryDep) -> DocumentExtraction:
+def extract_contract(
+    document: ParsedDocument,
+    settings: SettingsDep,
+    registry: ModelRegistryDep,
+    metrics_collector: MetricsCollectorDep,
+) -> DocumentExtraction:
     """Extract structured contract fields from parsed document text."""
     try:
         client = OpenAIClient(
             api_key=settings.openai_api_key,
             base_url=settings.openai_base_url,
+            metrics_collector=metrics_collector,
         )
     except OpenAIClientConfigurationError as exc:
         raise HTTPException(

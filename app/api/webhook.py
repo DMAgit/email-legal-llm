@@ -6,7 +6,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request, status
 from starlette.datastructures import FormData
 
-from app.api.deps import ModelRegistryDep, SettingsDep
+from app.api.deps import MetricsCollectorDep, ModelRegistryDep, SettingsDep
 from app.core.exceptions import ClassificationError, OpenAIClientError, RetrievalError, SearchClientError
 from app.core.logging import get_logger
 from app.domain.enums import ProcessingStage, ProcessingStatus, RoutingAction
@@ -43,6 +43,7 @@ async def mailgun_inbound(
     request: Request,
     settings: SettingsDep,
     registry: ModelRegistryDep,
+    metrics_collector: MetricsCollectorDep,
     extract: bool = False,
     classify: bool = False,
 ) -> InboundEmailProcessingResult:
@@ -130,6 +131,7 @@ async def mailgun_inbound(
                     llm_client=OpenAIClient(
                         api_key=settings.openai_api_key,
                         base_url=settings.openai_base_url,
+                        metrics_collector=metrics_collector,
                     ),
                 )
                 extractions, extraction_errors = extraction_service.extract_documents(documents)
@@ -170,6 +172,7 @@ async def mailgun_inbound(
                     base_url=settings.openai_base_url,
                     model=settings.embedding_model,
                     dimensions=settings.embedding_dimensions,
+                    metrics_collector=metrics_collector,
                 )
                 search_client = AzureSearchClient(
                     endpoint=settings.azure_search_endpoint,
@@ -184,6 +187,7 @@ async def mailgun_inbound(
                     llm_client=OpenAIClient(
                         api_key=settings.openai_api_key,
                         base_url=settings.openai_base_url,
+                        metrics_collector=metrics_collector,
                     ),
                 )
                 decision_service = DecisionService()
