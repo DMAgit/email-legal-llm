@@ -6,4 +6,5 @@ pydantic-settings>=2.2.1
 python-multipart>=0.0.9
 PyYAML>=6.0.1
 unstructured[csv,image,pdf]>=0.18.0
+unstructured-inference>=1.2.0
 uvicorn[standard]>=0.30.0

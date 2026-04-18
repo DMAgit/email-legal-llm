@@ -446,7 +446,11 @@ class PersistenceRepository:
 
     def save_outcome(self, outcome: ProcessingOutcome) -> None:
         """Persist final deterministic routing fields."""
-        current_stage = None if outcome.status == ProcessingStatus.FAILED else outcome.status.value
+        current_stage = (
+            None
+            if outcome.status == ProcessingStatus.FAILED
+            else ProcessingStage.PERSISTENCE_COMPLETED.value
+        )
         self.update_processing_run(
             outcome.process_id,
             status=outcome.status.value,
@@ -646,15 +650,23 @@ class PersistenceRepository:
         try:
             if status is None:
                 rows = self.connection.execute(
-                    "SELECT * FROM review_queue ORDER BY created_at DESC, id DESC"
+                    """
+                    SELECT review_queue.*, classifications.risk_level
+                    FROM review_queue
+                    LEFT JOIN classifications
+                        ON classifications.process_id = review_queue.process_id
+                    ORDER BY review_queue.created_at DESC, review_queue.id DESC
+                    """
                 ).fetchall()
             else:
                 rows = self.connection.execute(
                     """
-                    SELECT *
+                    SELECT review_queue.*, classifications.risk_level
                     FROM review_queue
+                    LEFT JOIN classifications
+                        ON classifications.process_id = review_queue.process_id
                     WHERE status = ?
-                    ORDER BY created_at DESC, id DESC
+                    ORDER BY review_queue.created_at DESC, review_queue.id DESC
                     """,
                     (_enum_value(status),),
                 ).fetchall()
@@ -827,6 +839,7 @@ def _review_item_from_row(row: sqlite3.Row) -> ReviewQueueItem:
         process_id=row["process_id"],
         review_type=row["review_type"],
         reason=row["reason"],
+        risk_level=row["risk_level"] if _has_column(row, "risk_level") else None,
         status=row["status"],
         created_at=_parse_datetime(row["created_at"]),
         updated_at=_parse_datetime(row["updated_at"]),
@@ -860,3 +873,7 @@ def _excerpt(value: str, limit: int = 1200) -> str:
 
 def _enum_value(value: Any) -> Any:
     return value.value if hasattr(value, "value") else value
+
+
+def _has_column(row: sqlite3.Row, name: str) -> bool:
+    return name in row.keys()

@@ -8,8 +8,10 @@ from starlette.datastructures import FormData
 
 from app.api.deps import ModelRegistryDep, SettingsDep
 from app.core.exceptions import ClassificationError, OpenAIClientError, RetrievalError, SearchClientError
+from app.core.logging import get_logger
 from app.domain.enums import ProcessingStage, ProcessingStatus, RoutingAction
 from app.domain.models.classification import ClassificationResult
+from app.domain.models.document import DocumentParseError, ParsedDocument
 from app.domain.models.email import AttachmentMetadata
 from app.domain.models.extraction import DocumentExtraction, DocumentExtractionError
 from app.domain.models.ingestion import AttachmentProcessingSummary, InboundEmailProcessingResult
@@ -29,6 +31,7 @@ from app.services.retrieval_service import RetrievalService
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 MAILGUN_SIGNATURE_MAX_AGE_SECONDS = 15 * 60
+logger = get_logger(__name__)
 
 
 @router.post(
@@ -82,9 +85,14 @@ async def mailgun_inbound(
         repository.update_processing_run(
             ingested.process_id,
             status=ProcessingStage.PARSING.value,
-            current_stage=ProcessingStage.PARSING.value,
+            current_stage=ProcessingStage.PARSE_STARTED.value,
+        )
+        logger.info(
+            "Attachment parsing started.",
+            extra={"process_id": ingested.process_id, "stage": ProcessingStage.PARSE_STARTED.value},
         )
         documents, errors = parsing_service.parse_attachments(ingested.attachments)
+        _log_parse_results(ingested.process_id, documents, errors)
         persistence_service.save_parsing_result(
             process_id=ingested.process_id,
             documents=documents,
@@ -100,6 +108,12 @@ async def mailgun_inbound(
                 current_stage=ProcessingStage.PARSING.value,
                 error_type="DocumentParseError",
                 error_message=_join_error_messages(error.error for error in errors)
+                or "No parsed documents were available for extraction.",
+            )
+            _log_process_failed(
+                process_id=ingested.process_id,
+                failing_stage=ProcessingStage.PARSING.value,
+                message=_join_error_messages(error.error for error in errors)
                 or "No parsed documents were available for extraction.",
             )
 
@@ -134,12 +148,18 @@ async def mailgun_inbound(
                 extractions=extractions,
                 errors=extraction_errors,
             )
+            _log_extraction_results(ingested.process_id, extractions, extraction_errors)
             if extraction_errors and not extractions:
                 persistence_service.save_failed_run(
                     process_id=ingested.process_id,
                     current_stage=ProcessingStage.EXTRACTING.value,
                     error_type="DocumentExtractionError",
                     error_message=_join_error_messages(error.error for error in extraction_errors),
+                )
+                _log_process_failed(
+                    process_id=ingested.process_id,
+                    failing_stage=ProcessingStage.EXTRACTING.value,
+                    message=_join_error_messages(error.error for error in extraction_errors),
                 )
 
         if classify and extractions:
@@ -185,6 +205,21 @@ async def mailgun_inbound(
                         document_extraction.document_id,
                         retrieval_result.chunks,
                     )
+                    repository.update_processing_run(
+                        ingested.process_id,
+                        status=ProcessingStage.RETRIEVING.value,
+                        current_stage=ProcessingStage.RETRIEVAL_COMPLETED.value,
+                    )
+                    logger.info(
+                        "Policy retrieval completed with %d chunk(s).",
+                        len(retrieval_result.chunks),
+                        extra={
+                            "process_id": ingested.process_id,
+                            "document_id": document_extraction.document_id,
+                            "filename": document_extraction.filename,
+                            "stage": ProcessingStage.RETRIEVAL_COMPLETED.value,
+                        },
+                    )
 
                     repository.update_processing_run(
                         ingested.process_id,
@@ -194,6 +229,22 @@ async def mailgun_inbound(
                     document_classification = classification_service.classify_retrieval_result(
                         document_extraction.extraction,
                         retrieval_result,
+                    )
+                    repository.update_processing_run(
+                        ingested.process_id,
+                        status=ProcessingStage.CLASSIFYING.value,
+                        current_stage=ProcessingStage.CLASSIFICATION_COMPLETED.value,
+                    )
+                    logger.info(
+                        "Risk classification completed with risk_level=%s recommended_action=%s.",
+                        document_classification.risk_level.value,
+                        document_classification.recommended_action.value,
+                        extra={
+                            "process_id": ingested.process_id,
+                            "document_id": document_extraction.document_id,
+                            "filename": document_extraction.filename,
+                            "stage": ProcessingStage.CLASSIFICATION_COMPLETED.value,
+                        },
                     )
 
                     repository.update_processing_run(
@@ -206,6 +257,24 @@ async def mailgun_inbound(
                         extraction=document_extraction.extraction,
                         classification=document_classification,
                         retrieved_context_available=bool(retrieval_result.chunks),
+                    )
+                    repository.update_processing_run(
+                        ingested.process_id,
+                        status=ProcessingStage.DECIDING.value,
+                        current_stage=ProcessingStage.DECISION_COMPLETED.value,
+                    )
+                    logger.info(
+                        "Deterministic decision completed with final_action=%s status=%s.",
+                        document_outcome.final_action.value
+                        if document_outcome.final_action is not None
+                        else "-",
+                        document_outcome.status.value,
+                        extra={
+                            "process_id": ingested.process_id,
+                            "document_id": document_extraction.document_id,
+                            "filename": document_extraction.filename,
+                            "stage": ProcessingStage.DECISION_COMPLETED.value,
+                        },
                     )
                     document_outcomes.append(document_outcome)
                     document_evaluation = _document_evaluation_from_outcome(
@@ -234,6 +303,13 @@ async def mailgun_inbound(
                     classification=classification,
                     outcome=outcome,
                 )
+                logger.info(
+                    "Processing result persisted.",
+                    extra={
+                        "process_id": ingested.process_id,
+                        "stage": ProcessingStage.PERSISTENCE_COMPLETED.value,
+                    },
+                )
             except (OpenAIClientError, SearchClientError, RetrievalError, ClassificationError) as exc:
                 classification_error = str(exc)
                 process_record = repository.get_process(ingested.process_id)
@@ -258,17 +334,42 @@ async def mailgun_inbound(
                     process_id=ingested.process_id,
                     outcome=outcome,
                 )
+                _log_process_failed(
+                    process_id=ingested.process_id,
+                    failing_stage=(
+                        process_record.current_stage
+                        if process_record is not None
+                        else ProcessingStage.CLASSIFYING.value
+                    ),
+                    message=classification_error,
+                    document_id=active_extraction.document_id,
+                    filename=active_extraction.filename,
+                )
 
         if not extract:
             if documents or not errors:
                 persistence_service.mark_completed_without_decision(
                     ingested.process_id,
-                    ProcessingStage.PARSING.value,
+                    ProcessingStage.PARSE_COMPLETED.value,
+                )
+                logger.info(
+                    "Parse-only processing result persisted.",
+                    extra={
+                        "process_id": ingested.process_id,
+                        "stage": ProcessingStage.PERSISTENCE_COMPLETED.value,
+                    },
                 )
         elif extractions and not classify:
             persistence_service.mark_completed_without_decision(
                 ingested.process_id,
-                ProcessingStage.EXTRACTING.value,
+                ProcessingStage.EXTRACTION_COMPLETED.value,
+            )
+            logger.info(
+                "Extraction-only processing result persisted.",
+                extra={
+                    "process_id": ingested.process_id,
+                    "stage": ProcessingStage.PERSISTENCE_COMPLETED.value,
+                },
             )
     finally:
         repository.close()
@@ -384,3 +485,89 @@ def _outcome_priority(outcome: ProcessingOutcome) -> int:
 
 def _join_error_messages(errors: object) -> str:
     return "; ".join(str(error) for error in errors if str(error))
+
+
+def _log_parse_results(
+    process_id: str,
+    documents: list[ParsedDocument],
+    errors: list[DocumentParseError],
+) -> None:
+    for document in documents:
+        logger.info(
+            "Attachment parsed with parser=%s file_type=%s.",
+            document.parser_name,
+            document.file_type,
+            extra={
+                "process_id": process_id,
+                "document_id": document.document_id,
+                "filename": document.filename,
+                "stage": ProcessingStage.PARSE_COMPLETED.value,
+            },
+        )
+    for error in errors:
+        logger.warning(
+            "Attachment parsing reported an error: %s",
+            _safe_log_message(error.error),
+            extra={
+                "process_id": process_id,
+                "filename": error.filename,
+                "stage": ProcessingStage.PARSE_COMPLETED.value,
+            },
+        )
+
+
+def _log_extraction_results(
+    process_id: str,
+    extractions: list[DocumentExtraction],
+    errors: list[DocumentExtractionError],
+) -> None:
+    for extraction in extractions:
+        logger.info(
+            "Structured extraction completed with confidence=%.2f.",
+            extraction.extraction.extraction_confidence,
+            extra={
+                "process_id": process_id,
+                "document_id": extraction.document_id,
+                "filename": extraction.filename,
+                "stage": ProcessingStage.EXTRACTION_COMPLETED.value,
+            },
+        )
+    for error in errors:
+        logger.warning(
+            "Structured extraction reported an error: %s",
+            _safe_log_message(error.error),
+            extra={
+                "process_id": process_id,
+                "document_id": error.document_id,
+                "filename": error.filename,
+                "stage": ProcessingStage.EXTRACTION_COMPLETED.value,
+            },
+        )
+
+
+def _log_process_failed(
+    *,
+    process_id: str,
+    failing_stage: str,
+    message: str,
+    document_id: str | None = None,
+    filename: str | None = None,
+) -> None:
+    logger.error(
+        "Processing failed at stage=%s: %s",
+        failing_stage,
+        _safe_log_message(message),
+        extra={
+            "process_id": process_id,
+            "document_id": document_id,
+            "filename": filename,
+            "stage": ProcessingStage.PROCESS_FAILED.value,
+        },
+    )
+
+
+def _safe_log_message(message: str, limit: int = 300) -> str:
+    cleaned = " ".join(message.split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 3].rstrip() + "..."

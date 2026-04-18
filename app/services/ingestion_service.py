@@ -11,7 +11,11 @@ from uuid import uuid4
 from starlette.datastructures import FormData, UploadFile
 
 from app.core.exceptions import IngestionError
+from app.core.logging import get_logger
+from app.domain.enums import ProcessingStage
 from app.domain.models.email import AttachmentMetadata, InboundEmail
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,11 @@ class IngestionService:
 
         email = self._build_email(form, attachment_count=len(uploads))
         process_id = uuid4().hex
+        logger.info(
+            "Inbound email accepted with %d attachment(s).",
+            len(uploads),
+            extra={"process_id": process_id, "stage": ProcessingStage.EMAIL_RECEIVED.value},
+        )
         attachments = await self.persist_uploads(process_id, uploads)
 
         return IngestedEmail(
@@ -73,6 +82,14 @@ class IngestionService:
                     size_bytes=len(content),
                     storage_path=str(destination),
                 )
+            )
+            logger.info(
+                "Attachment saved.",
+                extra={
+                    "process_id": process_id,
+                    "stage": ProcessingStage.ATTACHMENT_SAVED.value,
+                    "filename": filename,
+                },
             )
 
         return attachments

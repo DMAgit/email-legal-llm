@@ -31,6 +31,11 @@ class PersistenceService:
         self.repository.create_processing_run(process_id)
         self.repository.save_email(process_id, email)
         self.repository.save_attachments(process_id, attachments)
+        self.repository.update_processing_run(
+            process_id,
+            status=ProcessingStage.RECEIVED.value,
+            current_stage=ProcessingStage.ATTACHMENT_SAVED.value,
+        )
 
     def save_parsing_result(
         self,
@@ -58,7 +63,7 @@ class PersistenceService:
             self.repository.update_processing_run(
                 process_id,
                 status=ProcessingStage.PARSING.value,
-                current_stage=ProcessingStage.PARSING.value,
+                current_stage=ProcessingStage.PARSE_COMPLETED.value,
                 error_type="DocumentParseWarning",
                 error_message=_join_errors(error.error for error in errors),
             )
@@ -66,7 +71,7 @@ class PersistenceService:
             self.repository.update_processing_run(
                 process_id,
                 status=ProcessingStage.PARSING.value,
-                current_stage=ProcessingStage.PARSING.value,
+                current_stage=ProcessingStage.PARSE_COMPLETED.value,
             )
 
     def save_extraction_result(
@@ -89,7 +94,7 @@ class PersistenceService:
             self.repository.update_processing_run(
                 process_id,
                 status=ProcessingStage.EXTRACTING.value,
-                current_stage=ProcessingStage.EXTRACTING.value,
+                current_stage=ProcessingStage.EXTRACTION_COMPLETED.value,
                 error_type="DocumentExtractionWarning",
                 error_message=_join_errors(error.error for error in errors),
             )
@@ -97,7 +102,7 @@ class PersistenceService:
             self.repository.update_processing_run(
                 process_id,
                 status=ProcessingStage.EXTRACTING.value,
-                current_stage=ProcessingStage.EXTRACTING.value,
+                current_stage=ProcessingStage.EXTRACTION_COMPLETED.value,
             )
 
     def save_processing_result(

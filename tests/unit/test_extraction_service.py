@@ -162,6 +162,7 @@ def test_extraction_endpoint_requires_configured_openai_key(tmp_path: Path) -> N
     app.dependency_overrides[get_settings] = lambda: Settings(
         upload_dir=tmp_path,
         openai_api_key=None,
+        mailgun_webhook_secret="",
     )
 
     try:
@@ -180,6 +181,7 @@ def test_webhook_extract_flag_reports_missing_openai_key(tmp_path: Path) -> None
     app.dependency_overrides[get_settings] = lambda: Settings(
         upload_dir=tmp_path,
         openai_api_key=None,
+        mailgun_webhook_secret="",
     )
 
     try:

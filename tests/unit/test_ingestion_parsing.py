@@ -243,7 +243,10 @@ def test_mailgun_webhook_rejects_invalid_signature_before_storage(tmp_path: Path
 
 
 def test_mailgun_webhook_error_response_omits_storage_path(tmp_path: Path) -> None:
-    app.dependency_overrides[get_settings] = lambda: Settings(upload_dir=tmp_path)
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        upload_dir=tmp_path,
+        mailgun_webhook_secret="",
+    )
 
     try:
         response = TestClient(app).post(
@@ -364,6 +367,7 @@ def test_mailgun_webhook_classifies_all_extracted_documents(monkeypatch, tmp_pat
     app.dependency_overrides[get_settings] = lambda: Settings(
         upload_dir=tmp_path / "uploads",
         database_url=database_url,
+        mailgun_webhook_secret="",
     )
     try:
         response = TestClient(app).post(
