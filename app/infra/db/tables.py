@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS classifications (
     policy_conflicts TEXT NOT NULL DEFAULT '[]',
     recommended_action TEXT NOT NULL,
     rationale TEXT NOT NULL,
+    clause_evaluations TEXT NOT NULL DEFAULT '{}',
     final_confidence REAL NOT NULL,
     FOREIGN KEY (process_id) REFERENCES processing_runs(process_id) ON DELETE CASCADE
 );
@@ -108,6 +109,7 @@ CREATE TABLE IF NOT EXISTS document_evaluations (
     policy_conflicts TEXT NOT NULL DEFAULT '[]',
     recommended_action TEXT,
     rationale TEXT,
+    clause_evaluations TEXT NOT NULL DEFAULT '{}',
     final_confidence REAL,
     PRIMARY KEY (process_id, document_id),
     FOREIGN KEY (process_id) REFERENCES processing_runs(process_id) ON DELETE CASCADE
@@ -134,4 +136,32 @@ CREATE INDEX IF NOT EXISTS idx_review_queue_status ON review_queue(status);
 def create_schema(connection: sqlite3.Connection) -> None:
     """Create all persistence tables if they do not already exist."""
     connection.executescript(SCHEMA_SQL)
+    _ensure_column(
+        connection,
+        table_name="classifications",
+        column_name="clause_evaluations",
+        definition="TEXT NOT NULL DEFAULT '{}'",
+    )
+    _ensure_column(
+        connection,
+        table_name="document_evaluations",
+        column_name="clause_evaluations",
+        definition="TEXT NOT NULL DEFAULT '{}'",
+    )
     connection.commit()
+
+
+def _ensure_column(
+    connection: sqlite3.Connection,
+    *,
+    table_name: str,
+    column_name: str,
+    definition: str,
+) -> None:
+    columns = {
+        row[1]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name in columns:
+        return
+    connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")

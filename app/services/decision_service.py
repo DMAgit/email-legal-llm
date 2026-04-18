@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app.domain.enums import ProcessingStatus, RiskLevel, RoutingAction
-from app.domain.models.classification import ClassificationResult
+from app.domain.models.classification import ClauseEvaluation, ClassificationResult, PolicyConflict
 from app.domain.models.extraction import ContractExtractionResult
 from app.domain.models.persistence import ProcessingOutcome
 
@@ -85,6 +85,23 @@ class DecisionService:
                 errors=normalized_errors,
             )
 
+        highest_clause = _highest_clause_evaluation(classification)
+        if highest_clause is not None and highest_clause[1].risk == RiskLevel.HIGH:
+            clause_type, clause_evaluation = highest_clause
+            return ProcessingOutcome(
+                process_id=process_id,
+                status=ProcessingStatus.FLAGGED,
+                extraction=extraction,
+                classification=classification,
+                review_required=True,
+                final_action=RoutingAction.LEGAL_REVIEW,
+                decision_reason=(
+                    "High risk clause evaluation requires legal review: "
+                    f"{_format_clause_evaluation(clause_type, clause_evaluation)}."
+                ),
+                errors=normalized_errors,
+            )
+
         if classification.risk_level == RiskLevel.HIGH:
             return ProcessingOutcome(
                 process_id=process_id,
@@ -94,6 +111,22 @@ class DecisionService:
                 review_required=True,
                 final_action=RoutingAction.LEGAL_REVIEW,
                 decision_reason="High risk classification requires legal review.",
+                errors=normalized_errors,
+            )
+
+        if highest_clause is not None and highest_clause[1].risk == RiskLevel.MEDIUM:
+            clause_type, clause_evaluation = highest_clause
+            return ProcessingOutcome(
+                process_id=process_id,
+                status=ProcessingStatus.FLAGGED,
+                extraction=extraction,
+                classification=classification,
+                review_required=True,
+                final_action=RoutingAction.PROCUREMENT_REVIEW,
+                decision_reason=(
+                    "Medium risk clause evaluation requires procurement review: "
+                    f"{_format_clause_evaluation(clause_type, clause_evaluation)}."
+                ),
                 errors=normalized_errors,
             )
 
@@ -157,7 +190,10 @@ class DecisionService:
                 classification=classification,
                 review_required=True,
                 final_action=RoutingAction.MANUAL_REVIEW,
-                decision_reason="Policy conflicts prevent auto-store.",
+                decision_reason=(
+                    "Policy conflicts prevent auto-store: "
+                    f"{_format_policy_conflicts(classification.policy_conflicts)}."
+                ),
                 errors=normalized_errors,
             )
 
@@ -198,3 +234,28 @@ class DecisionService:
             decision_reason="Low risk classification met the routing confidence threshold.",
             errors=normalized_errors,
         )
+
+
+def _highest_clause_evaluation(
+    classification: ClassificationResult,
+) -> tuple[str, ClauseEvaluation] | None:
+    if not classification.clause_evaluations:
+        return None
+
+    risk_priority = {
+        RiskLevel.LOW: 1,
+        RiskLevel.MEDIUM: 2,
+        RiskLevel.HIGH: 3,
+    }
+    return max(
+        classification.clause_evaluations.items(),
+        key=lambda item: risk_priority[item[1].risk],
+    )
+
+
+def _format_clause_evaluation(clause_type: str, evaluation: ClauseEvaluation) -> str:
+    return f"{clause_type}: {evaluation.reason}"
+
+
+def _format_policy_conflicts(conflicts: Sequence[PolicyConflict]) -> str:
+    return "; ".join(f"{conflict.clause_type}: {conflict.issue}" for conflict in conflicts)

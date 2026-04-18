@@ -2,11 +2,11 @@
 
 from fastapi import APIRouter
 
-from app.api.deps import ModelRegistryDep, SettingsDep
+from app.api.deps import MetricsCollectorDep, ModelRegistryDep, SettingsDep
 from app.api.extraction import router as extraction_router
 from app.api.processes import router as processes_router
 from app.api.webhook import router as webhook_router
-from app.domain.models.system import HealthResponse, ModelRegistryResponse
+from app.domain.models.system import HealthResponse, MetricsResponse, ModelRegistryResponse
 
 router = APIRouter()
 router.include_router(extraction_router)
@@ -29,3 +29,9 @@ def health(settings: SettingsDep, registry: ModelRegistryDep) -> HealthResponse:
 def model_configs(registry: ModelRegistryDep) -> ModelRegistryResponse:
     """Return loaded YAML model configuration names and public values."""
     return ModelRegistryResponse(configs=registry.public_configs())
+
+
+@router.get("/metrics", response_model=MetricsResponse)
+def metrics(metrics_collector: MetricsCollectorDep) -> MetricsResponse:
+    """Return in-process API and OpenAI usage metrics."""
+    return MetricsResponse.model_validate(metrics_collector.snapshot())

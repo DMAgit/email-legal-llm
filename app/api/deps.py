@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from app.core.config import Settings, get_settings
+from app.core.metrics import MetricsCollector
 from app.core.model_registry import ModelRegistry
 from app.infra.db.repository import PersistenceRepository
 
@@ -15,8 +16,14 @@ def get_model_registry(request: Request) -> ModelRegistry:
     return request.app.state.model_registry
 
 
+def get_metrics_collector(request: Request) -> MetricsCollector:
+    """Return the application-level metrics collector."""
+    return request.app.state.metrics_collector
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 ModelRegistryDep = Annotated[ModelRegistry, Depends(get_model_registry)]
+MetricsCollectorDep = Annotated[MetricsCollector, Depends(get_metrics_collector)]
 
 
 def get_persistence_repository(settings: SettingsDep) -> Iterator[PersistenceRepository]:
