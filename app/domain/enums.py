@@ -27,3 +27,23 @@ class ProcessingStatus(StrEnum):
     FLAGGED = "flagged"
     FAILED = "failed"
 
+
+class ProcessingStage(StrEnum):
+    """Internal processing stages stored for auditability."""
+
+    RECEIVED = "received"
+    PARSING = "parsing"
+    EXTRACTING = "extracting"
+    RETRIEVING = "retrieving"
+    CLASSIFYING = "classifying"
+    DECIDING = "deciding"
+    COMPLETED = "completed"
+    FLAGGED = "flagged"
+    FAILED = "failed"
+
+
+class ReviewQueueStatus(StrEnum):
+    """Lifecycle status for manual review queue entries."""
+
+    OPEN = "open"
+    CLOSED = "closed"
