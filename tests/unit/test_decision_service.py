@@ -33,12 +33,14 @@ def _classification(
     confidence: float,
     recommended_action: RoutingAction = RoutingAction.AUTO_STORE,
     policy_conflicts: list[str] | None = None,
+    clause_evaluations: dict[str, dict[str, str]] | None = None,
 ) -> ClassificationResult:
     return ClassificationResult(
         risk_level=risk_level,
         policy_conflicts=policy_conflicts or [],
         recommended_action=recommended_action,
         rationale="Model rationale.",
+        clause_evaluations=clause_evaluations or {},
         final_confidence=confidence,
     )
 
@@ -139,6 +141,49 @@ def test_low_risk_requires_no_policy_conflicts() -> None:
     assert outcome.status == ProcessingStatus.FLAGGED
     assert outcome.final_action == RoutingAction.MANUAL_REVIEW
     assert "Policy conflicts" in (outcome.decision_reason or "")
+    assert "general: Missing DPA." in (outcome.decision_reason or "")
+
+
+def test_high_risk_clause_evaluation_routes_to_legal_review() -> None:
+    outcome = DecisionService().build_outcome(
+        process_id="process-1",
+        extraction=_extraction(),
+        classification=_classification(
+            risk_level=RiskLevel.LOW,
+            confidence=0.91,
+            clause_evaluations={
+                "data_usage": {
+                    "risk": "high",
+                    "reason": "AI training on customer data is prohibited.",
+                }
+            },
+        ),
+    )
+
+    assert outcome.status == ProcessingStatus.FLAGGED
+    assert outcome.final_action == RoutingAction.LEGAL_REVIEW
+    assert "data_usage" in (outcome.decision_reason or "")
+
+
+def test_medium_risk_clause_evaluation_routes_to_procurement_review() -> None:
+    outcome = DecisionService().build_outcome(
+        process_id="process-1",
+        extraction=_extraction(),
+        classification=_classification(
+            risk_level=RiskLevel.LOW,
+            confidence=0.91,
+            clause_evaluations={
+                "payment_terms": {
+                    "risk": "medium",
+                    "reason": "Net 60 requires procurement review.",
+                }
+            },
+        ),
+    )
+
+    assert outcome.status == ProcessingStatus.FLAGGED
+    assert outcome.final_action == RoutingAction.PROCUREMENT_REVIEW
+    assert "payment_terms" in (outcome.decision_reason or "")
 
 
 def test_low_risk_requires_retrieved_policy_context() -> None:

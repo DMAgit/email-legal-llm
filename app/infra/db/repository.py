@@ -332,14 +332,15 @@ class PersistenceRepository:
                     """
                     INSERT INTO classifications (
                         process_id, risk_level, policy_conflicts, recommended_action,
-                        rationale, final_confidence
+                        rationale, clause_evaluations, final_confidence
                     )
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(process_id) DO UPDATE SET
                         risk_level = excluded.risk_level,
                         policy_conflicts = excluded.policy_conflicts,
                         recommended_action = excluded.recommended_action,
                         rationale = excluded.rationale,
+                        clause_evaluations = excluded.clause_evaluations,
                         final_confidence = excluded.final_confidence
                     """,
                     (
@@ -347,7 +348,8 @@ class PersistenceRepository:
                         classification.risk_level.value,
                         _json_dump(classification.policy_conflicts),
                         classification.recommended_action.value,
-                        classification.rationale,
+                        _json_dump(classification.rationale),
+                        _json_dump(classification.clause_evaluations),
                         classification.final_confidence,
                     ),
                 )
@@ -396,9 +398,9 @@ class PersistenceRepository:
                     INSERT INTO document_evaluations (
                         process_id, document_id, status, final_action, review_required,
                         decision_reason, errors, risk_level, policy_conflicts,
-                        recommended_action, rationale, final_confidence
+                        recommended_action, rationale, clause_evaluations, final_confidence
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(process_id, document_id) DO UPDATE SET
                         status = excluded.status,
                         final_action = excluded.final_action,
@@ -409,6 +411,7 @@ class PersistenceRepository:
                         policy_conflicts = excluded.policy_conflicts,
                         recommended_action = excluded.recommended_action,
                         rationale = excluded.rationale,
+                        clause_evaluations = excluded.clause_evaluations,
                         final_confidence = excluded.final_confidence
                     """,
                     (
@@ -430,7 +433,16 @@ class PersistenceRepository:
                             if classification is not None
                             else None
                         ),
-                        classification.rationale if classification is not None else None,
+                        (
+                            _json_dump(classification.rationale)
+                            if classification is not None
+                            else None
+                        ),
+                        (
+                            _json_dump(classification.clause_evaluations)
+                            if classification is not None
+                            else "{}"
+                        ),
                         classification.final_confidence if classification is not None else None,
                     ),
                 )
@@ -797,7 +809,8 @@ def _classification_from_row(row: sqlite3.Row) -> ClassificationResult:
         risk_level=row["risk_level"],
         policy_conflicts=_json_load(row["policy_conflicts"]),
         recommended_action=row["recommended_action"],
-        rationale=row["rationale"],
+        rationale=_json_or_text(row["rationale"]),
+        clause_evaluations=_json_load(_row_value(row, "clause_evaluations", "{}")),
         final_confidence=row["final_confidence"],
     )
 
@@ -815,7 +828,8 @@ def _document_evaluation_from_row(
             risk_level=row["risk_level"],
             policy_conflicts=_json_load(row["policy_conflicts"]),
             recommended_action=row["recommended_action"],
-            rationale=row["rationale"],
+            rationale=_json_or_text(row["rationale"]),
+            clause_evaluations=_json_load(_row_value(row, "clause_evaluations", "{}")),
             final_confidence=row["final_confidence"],
         )
     return DocumentEvaluation(
@@ -855,13 +869,32 @@ def _parse_datetime(value: str) -> datetime:
 
 
 def _json_dump(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=True)
+    return json.dumps(_json_compatible(value), ensure_ascii=True)
 
 
 def _json_load(value: str | None) -> Any:
     if not value:
         return []
     return json.loads(value)
+
+
+def _json_or_text(value: str | None) -> Any:
+    if value is None:
+        return []
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
+def _json_compatible(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {key: _json_compatible(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_compatible(item) for item in value]
+    return value
 
 
 def _excerpt(value: str, limit: int = 1200) -> str:
@@ -877,3 +910,9 @@ def _enum_value(value: Any) -> Any:
 
 def _has_column(row: sqlite3.Row, name: str) -> bool:
     return name in row.keys()
+
+
+def _row_value(row: sqlite3.Row, name: str, default: Any = None) -> Any:
+    if not _has_column(row, name):
+        return default
+    return row[name]

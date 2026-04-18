@@ -16,6 +16,17 @@ from app.domain.models.retrieval import RetrievedContextChunk, RetrievalResult
 from app.infra.llm.openai_client import OpenAIClientError
 from app.infra.llm.prompt_loader import PromptTemplate, PromptTemplateLoader
 
+CLAUSE_FIELD_SPECS: tuple[tuple[str, str], ...] = (
+    ("payment_terms", "payment_terms"),
+    ("liability_clause", "liability"),
+    ("data_usage_clause", "data_usage"),
+    ("termination_clause", "termination"),
+    ("renewal_clause", "renewal"),
+    ("governing_law", "governing_law"),
+    ("vendor_name", "vendor"),
+    ("contract_type", "contract_type"),
+)
+
 
 class ClassificationLLMClient(Protocol):
     """Protocol for LLM clients that return schema-shaped classification JSON."""
@@ -129,16 +140,53 @@ class ClassificationService:
         retrieved_chunks: Sequence[RetrievedContextChunk],
         retrieval_warnings: Sequence[str],
     ) -> str:
+        bounded_context = self._bounded_context(retrieved_chunks)
         payload = {
             "extraction": extraction.model_dump(mode="json"),
-            "retrieved_context": self._bounded_context(retrieved_chunks),
+            "clause_inputs": self._clause_inputs(extraction),
+            "clause_contexts": self._clause_contexts(bounded_context),
+            "retrieved_context": bounded_context,
             "retrieval_warnings": list(retrieval_warnings),
+            "classification_contract": {
+                "clause_evaluations": (
+                    "Evaluate each clause_input independently using matching clause_contexts "
+                    "before assigning the aggregate risk_level."
+                ),
+                "policy_conflicts": (
+                    "Return structured conflicts only when retrieved policy context supports "
+                    "a concrete mismatch."
+                ),
+                "rationale": (
+                    "Return a list of evidence-based reasons, not a generic summary."
+                ),
+            },
             "routing_scope": (
                 "recommended_action is advisory. Final workflow routing and persistence "
                 "are applied later by deterministic application logic."
             ),
         }
         return json.dumps(payload, ensure_ascii=True)
+
+    def _clause_inputs(self, extraction: ContractExtractionResult) -> dict[str, dict[str, str]]:
+        clause_inputs: dict[str, dict[str, str]] = {}
+        for field_name, clause_type in CLAUSE_FIELD_SPECS:
+            value = _clean_string(getattr(extraction, field_name, None))
+            if value:
+                clause_inputs[clause_type] = {
+                    "field_name": field_name,
+                    "text": value,
+                }
+        return clause_inputs
+
+    def _clause_contexts(
+        self,
+        bounded_context: Sequence[dict[str, Any]],
+    ) -> dict[str, list[dict[str, Any]]]:
+        clause_contexts: dict[str, list[dict[str, Any]]] = {}
+        for chunk in bounded_context:
+            clause_type = _clean_string(chunk.get("clause_type")) or "general"
+            clause_contexts.setdefault(clause_type, []).append(dict(chunk))
+        return clause_contexts
 
     def _bounded_context(
         self,
@@ -168,3 +216,10 @@ def _truncate(value: str, limit: int) -> str:
     if limit <= 3:
         return value[:limit]
     return f"{value[: limit - 3].rstrip()}..."
+
+
+def _clean_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

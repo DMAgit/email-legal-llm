@@ -85,7 +85,13 @@ def _classification(
         risk_level=risk_level,
         policy_conflicts=[],
         recommended_action=recommended_action,
-        rationale="Policy context supports this route.",
+        rationale=["Payment terms: Net 30 aligns with policy."],
+        clause_evaluations={
+            "payment_terms": {
+                "risk": "low",
+                "reason": "Net 30 aligns with the payment policy.",
+            }
+        },
         final_confidence=confidence,
     )
 
@@ -160,6 +166,8 @@ def test_repository_saves_and_fetches_completed_run(tmp_path: Path) -> None:
     assert record.retrieved_contexts[0].chunk_id == "liability-policy"
     assert record.classification is not None
     assert record.classification.risk_level == RiskLevel.LOW
+    assert record.classification.rationale == ["Payment terms: Net 30 aligns with policy."]
+    assert record.classification.clause_evaluations["payment_terms"].risk == RiskLevel.LOW
     assert record.document_evaluations[0].document_id == "doc-1"
     assert record.document_evaluations[0].filename == "contract.csv"
     assert record.document_evaluations[0].final_action == RoutingAction.AUTO_STORE

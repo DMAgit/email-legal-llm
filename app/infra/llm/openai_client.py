@@ -109,7 +109,8 @@ class OpenAIClient:
 
 def _strict_json_schema(schema_model: type[BaseModel]) -> dict[str, Any]:
     """Return a JSON schema adjusted for OpenAI strict structured outputs."""
-    schema = schema_model.model_json_schema()
+    schema_factory = getattr(schema_model, "openai_json_schema", None)
+    schema = schema_factory() if callable(schema_factory) else schema_model.model_json_schema()
     return _make_strict(schema)
 
 

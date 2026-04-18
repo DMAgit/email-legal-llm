@@ -192,6 +192,12 @@ For clean aligned contracts, the expected result is typically:
 
 * `risk_level: low`
 * `recommended_action: auto_store`
+* `rationale`: evidence-backed bullets such as payment alignment, liability cap,
+  data-use limits, termination rights, and approved vendor status
+* `clause_evaluations`: per-clause risk and reason entries for terms such as
+  `payment_terms`, `liability`, and `data_usage`
+* `policy_conflicts`: structured conflict objects with `clause_type` and
+  `issue` when retrieved policy context supports a mismatch
 
 ## Tests
 
