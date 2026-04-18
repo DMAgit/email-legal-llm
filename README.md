@@ -120,6 +120,32 @@ The webhook accepts Mailgun-style multipart form payloads, so local development 
 
 Ready-made sample contracts live in `data/test files/`.
 
+### Demo Script
+
+After setting `OPENAI_API_KEY`, Azure AI Search settings, and seeding the demo KB, run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\demo_contract_risk.py
+```
+
+The script runs the three bundled PDF contracts through the same webhook workflow and prints expected versus actual routing:
+
+```text
+=== Contract Risk Analyzer Demo ===
+
+[1] Clean SaaS Agreement (Acme Hosting)
+→ Expected: auto_store
+→ Result: auto_store ✅
+
+[2] Analytics Vendor Contract (BluePeak)
+→ Expected: procurement_review
+→ Result: procurement_review ⚠️
+
+[3] AI Vendor Contract (DataForge)
+→ Expected: legal_review
+→ Result: legal_review 🚨
+```
+
 ### Postman
 
 Create a `POST` request to:
