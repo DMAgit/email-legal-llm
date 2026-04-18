@@ -112,6 +112,7 @@ def seed_search_index(documents: list[dict[str, Any]], settings: Settings) -> Se
             SimpleField(name="doc_type", type=SearchFieldDataType.String, filterable=True),
             SimpleField(name="clause_type", type=SearchFieldDataType.String, filterable=True),
             SimpleField(name="source", type=SearchFieldDataType.String, filterable=True),
+            SearchableField(name="document_title", type=SearchFieldDataType.String, filterable=True),
             SearchableField(name="label", type=SearchFieldDataType.String, filterable=True),
             SimpleField(name="risk_level", type=SearchFieldDataType.String, filterable=True),
         ],
@@ -175,11 +176,13 @@ def main() -> int:
 
 def _markdown_documents(path: Path, doc_type: str) -> list[dict[str, Any]]:
     text = path.read_text(encoding="utf-8")
+    document_title = _markdown_title(text)
     sections = _split_markdown_sections(text)
     return [
         _document(
             source=path.name,
             doc_type=doc_type,
+            document_title=document_title,
             label=_section_label(section),
             content=section,
             index=index,
@@ -256,6 +259,7 @@ def _document(
     label: str,
     content: str,
     index: int,
+    document_title: str | None = None,
     clause_type: str | None = None,
     risk_level: str | None = None,
     infer_risk_level: bool = True,
@@ -267,6 +271,7 @@ def _document(
         "doc_type": doc_type,
         "clause_type": clause,
         "source": source,
+        "document_title": document_title,
         "label": label,
         "risk_level": risk_level or (_infer_risk_level(content) if infer_risk_level else None),
     }
@@ -276,6 +281,7 @@ def _embedding_text(document: dict[str, Any]) -> str:
     metadata = [
         f"Source: {document.get('source')}",
         f"Type: {document.get('doc_type')}",
+        f"Title: {document.get('document_title') or 'untitled'}",
         f"Clause: {document.get('clause_type') or 'general'}",
         f"Label: {document.get('label')}",
         f"Risk: {document.get('risk_level') or 'unspecified'}",
@@ -344,6 +350,14 @@ def _split_markdown_sections(text: str) -> list[str]:
 def _section_label(section: str) -> str:
     first_line = section.splitlines()[0].strip("# ").strip()
     return first_line or "knowledge base section"
+
+
+def _markdown_title(text: str) -> str | None:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# ") and not stripped.startswith("## "):
+            return stripped.removeprefix("# ").strip() or None
+    return None
 
 
 def _is_title_only_section(section: str) -> bool:

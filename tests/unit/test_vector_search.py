@@ -10,6 +10,7 @@ from app.core.exceptions import SearchClientError
 from scripts.seed_search_index import (
     VECTOR_FIELD_NAME,
     _historical_review_documents,
+    _markdown_documents,
     _upload_documents,
     _vendor_documents,
     embed_documents,
@@ -73,6 +74,7 @@ def test_seed_documents_are_embedded_before_upload() -> None:
             "doc_type": "policy",
             "clause_type": "liability",
             "source": "policy.md",
+            "document_title": "Contract Review Policy",
             "label": "Liability",
             "risk_level": "high",
         }
@@ -81,6 +83,7 @@ def test_seed_documents_are_embedded_before_upload() -> None:
     embedded = embed_documents(documents, embedding_client)
 
     assert embedded[0][VECTOR_FIELD_NAME] == [0.0, 0.1, 0.2]
+    assert "Title: Contract Review Policy" in embedding_client.text_batches[0][0]
     assert "Clause: liability" in embedding_client.text_batches[0][0]
     assert "Unlimited liability requires legal review." in embedding_client.text_batches[0][0]
 
@@ -137,8 +140,15 @@ def test_upload_documents_raises_when_azure_rejects_documents() -> None:
         _upload_documents(client, [{"id": "doc-1"}])
 
 
-def test_vendor_documents_include_tier_and_inferred_risk() -> None:
-    documents = _vendor_documents(Path("data/kb/vendors.csv"))
+def test_vendor_documents_include_tier_and_inferred_risk(tmp_path: Path) -> None:
+    vendor_path = tmp_path / "vendors.csv"
+    vendor_path.write_text(
+        "vendor_name,status,tier,risk_level,notes\n"
+        "Globex AI,watchlist,tier_1,,Requires DPA review\n",
+        encoding="utf-8",
+    )
+
+    documents = _vendor_documents(vendor_path)
 
     globex = next(document for document in documents if document["label"] == "Globex AI")
     assert "Tier: tier_1" in globex["content"]
@@ -154,3 +164,27 @@ def test_historical_reviews_use_clause_text_decision_and_reason() -> None:
     assert "Clause text:" in first["content"]
     assert "Reason:" in first["content"]
     assert first["risk_level"] == "high"
+
+
+def test_markdown_documents_preserve_top_level_title_metadata(tmp_path: Path) -> None:
+    markdown_path = tmp_path / "policy.md"
+    markdown_path.write_text(
+        "# Contract Review Policy\n\n"
+        "Intro text that should not become its own title-only chunk.\n\n"
+        "## Liability\n\n"
+        "Unlimited liability requires legal review.\n\n"
+        "## Payment Terms\n\n"
+        "Net 60 terms require procurement review.\n",
+        encoding="utf-8",
+    )
+
+    documents = _markdown_documents(markdown_path, "policy")
+
+    assert [document["label"] for document in documents] == [
+        "Contract Review Policy",
+        "Liability",
+        "Payment Terms",
+    ]
+    assert {document["document_title"] for document in documents} == {
+        "Contract Review Policy"
+    }

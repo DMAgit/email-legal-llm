@@ -1,10 +1,10 @@
-vendor_name,status,tier,notes
-Acme Analytics,approved,tier_2,Existing vendor with approved DPA SOC 2 Type II and standard Net 30 payment terms.
-Globex AI,watchlist,tier_1,Prior review flagged broad customer data training rights and AI subprocessor opacity.
-Northwind Services,conditional,tier_2,Approved only with liability cap at twelve months fees and no annual prepayment.
-Contoso Legal Ops,approved,tier_3,Approved clause library language on liability termination and confidentiality.
-BrightMarket Data,watchlist,tier_1,Marketing analytics vendor requires legal review for data sharing and AI enrichment language.
-LedgerWorks Finance,approved,tier_2,Finance operations vendor approved with Net 45 and standard security exhibit.
-Atlas Cloud Hosting,conditional,tier_1,Infrastructure vendor must include DPA breach notice and data deletion commitments.
-PaperTrail Signatures,approved,tier_3,Low-risk e-signature workflow vendor with standard MSA and acceptable governing law.
-OmniRecruit AI,blocked,tier_1,Blocked until vendor removes AI model training rights from candidate and employee data.
+vendor_name,status,tier,risk_level,notes
+Acme Hosting Ltd.,approved,tier_2,low,Standard SaaS hosting vendor with approved commercial model and no material policy exceptions.
+Northstar Solutions Inc.,approved,tier_2,low,Included as a known low-risk counterparty for clean demo scenarios.
+BluePeak Analytics GmbH,watchlist,tier_1,high,Commercial terms often include annual prepayment long renewal notice and list-price renewal increases.
+DataForge AI Inc.,blocked,tier_1,high,AI vendor associated with prohibited training language and elevated privacy review requirements.
+QuantumOps Services Ltd.,conditional,tier_2,medium,Acceptable for lower-risk services only when incorporated terms security exhibit and DPA are present.
+VertexCloud Technologies Inc.,conditional,tier_2,medium,Prior drafts showed mixed liability and renewal language requiring closer review.
+Atlas Retail Group,approved,tier_3,low,Low-risk customer entity used in demo documents and OCR edge-case testing.
+Helix Financial Systems,approved,tier_1,medium,Sensitive financial-services context requires careful review of data usage and security terms.
+BrightPath Logistics Ltd.,approved,tier_3,low,Commercially straightforward customer entity used in procurement-review scenarios.

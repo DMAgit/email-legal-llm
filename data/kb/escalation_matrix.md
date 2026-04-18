@@ -1,40 +1,83 @@
 # Escalation Matrix
 
-## auto_store
+## Auto Store
+clause_type: general
+risk_level: low
+summary: Auto-store is permitted only when policy alignment is confirmed, confidence is high, and vendor risk is low or approved.
 
-Use auto_store only when retrieved policy context confirms that key terms align
-with the standard position, no policy conflicts are present, extraction
-confidence is at least 0.80, classifier confidence is at least 0.80, and the
-vendor is approved or low risk. Auto-store candidates should still preserve
-retrieved context for traceability.
+Use auto_store only when all of the following are true:
+- Retrieved policy context confirms that key terms align with the standard position.
+- No policy conflicts are present.
+- Extraction confidence is at least 0.80.
+- Classifier confidence is at least 0.80.
+- The vendor is approved or otherwise low risk.
 
-## procurement_review
+Operational note:
+- Auto-store candidates should still preserve retrieved context for traceability.
 
-Use procurement_review for commercial or vendor-management risk that does not
-create a primary legal issue. Examples include Net 60 terms, annual prepayment
-above 25% of annual fees, payment due on receipt, uncapped renewal price
-increases, renewal notice above 60 days, non-standard billing cadence, watchlist
-vendor status, or missing purchase order requirements.
+## Procurement Review
+clause_type: general
+risk_level: medium
+summary: Use procurement_review for commercial or vendor-management risk that does not create a primary legal issue.
 
-## legal_review
+Examples:
+- Net 60 payment terms.
+- Annual prepayment above 25% of annual fees.
+- Payment due on receipt.
+- Uncapped renewal price increases.
+- Renewal notice above 60 days.
+- Non-standard billing cadence.
+- Watchlist vendor status.
+- Missing purchase order requirements.
 
-Use legal_review for legal, privacy, security, or regulatory risk. Examples
-include unlimited liability, uncapped indemnity, customer-only liability,
-prohibited AI training, broad data sharing, missing DPA, foreign governing law,
-vendor-only termination rights, lack of data deletion rights, or retention of
-customer data after termination.
+Decision rule:
+- If the core issue is commercial, pricing, billing, renewal, or vendor-management related, prefer procurement_review unless a separate legal trigger is also present.
 
-## manual_review
+## Legal Review
+clause_type: general
+risk_level: high
+summary: Use legal_review for legal, privacy, security, or regulatory risk.
 
-Use manual_review when extraction confidence is below 0.80, retrieval returns
-no relevant policy context, required clauses are missing, retrieved context is
-contradictory, the vendor is blocked, the clause type is unknown, or the model
-confidence is below 0.65. Manual review is also appropriate when business
-context is needed before choosing procurement_review or legal_review.
+Examples:
+- Unlimited liability.
+- Uncapped indemnity.
+- Customer-only liability.
+- Prohibited AI training.
+- Broad data sharing.
+- Missing DPA.
+- Foreign governing law.
+- Vendor-only termination rights.
+- Lack of data deletion rights.
+- Retention of customer data after termination.
+
+Decision rule:
+- If both procurement_review and legal_review apply, choose legal_review.
+
+## Manual Review
+clause_type: general
+risk_level: medium
+summary: Use manual_review when confidence is too low, required context is missing, or the document cannot be reliably classified.
+
+Examples:
+- Extraction confidence is below 0.80.
+- Retrieval returns no relevant policy context.
+- Required clauses are missing.
+- Retrieved context is contradictory.
+- The vendor is blocked.
+- The clause type is unknown.
+- Model confidence is below 0.65.
+- Business context is needed before choosing procurement_review or legal_review.
+
+Decision rule:
+- Manual review is appropriate when the system cannot confidently resolve the issue from the document and retrieved context alone.
 
 ## Tie Breaker Rules
+clause_type: general
+risk_level: medium
+summary: Tie-breaker rules determine the final route when multiple conditions apply.
 
-When both procurement_review and legal_review apply, choose legal_review. When
-policy context is missing or the classifier is uncertain, choose manual_review.
-When a vendor is blocked or the clause includes prohibited data usage, do not
-auto_store even if other terms are acceptable.
+Rules:
+- When both procurement_review and legal_review apply, choose legal_review.
+- When policy context is missing or the classifier is uncertain, choose manual_review.
+- When a vendor is blocked, do not auto_store.
+- When the clause includes prohibited data usage, do not auto_store even if other terms are acceptable.
