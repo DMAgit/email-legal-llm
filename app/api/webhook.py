@@ -8,12 +8,12 @@ from starlette.datastructures import FormData
 
 from app.api.deps import ModelRegistryDep, SettingsDep
 from app.core.exceptions import ClassificationError, OpenAIClientError, RetrievalError, SearchClientError
-from app.domain.enums import ProcessingStage
+from app.domain.enums import ProcessingStage, ProcessingStatus, RoutingAction
 from app.domain.models.classification import ClassificationResult
 from app.domain.models.email import AttachmentMetadata
 from app.domain.models.extraction import DocumentExtraction, DocumentExtractionError
 from app.domain.models.ingestion import AttachmentProcessingSummary, InboundEmailProcessingResult
-from app.domain.models.persistence import ProcessingOutcome
+from app.domain.models.persistence import DocumentEvaluation, ProcessingOutcome
 from app.domain.models.retrieval import RetrievedContextChunk
 from app.infra.db.repository import PersistenceRepository
 from app.infra.llm.embedding_client import OpenAIEmbeddingClient
@@ -63,6 +63,7 @@ async def mailgun_inbound(
     classification: ClassificationResult | None = None
     classification_error: str | None = None
     outcome: ProcessingOutcome | None = None
+    document_evaluations: list[DocumentEvaluation] = []
 
     try:
         ingested = await ingestion_service.ingest_mailgun_form(form)
@@ -142,13 +143,8 @@ async def mailgun_inbound(
                 )
 
         if classify and extractions:
-            selected_extraction = extractions[0]
+            active_extraction = extractions[0]
             try:
-                repository.update_processing_run(
-                    ingested.process_id,
-                    status=ProcessingStage.RETRIEVING.value,
-                    current_stage=ProcessingStage.RETRIEVING.value,
-                )
                 embedding_client = OpenAIEmbeddingClient(
                     api_key=settings.openai_api_key,
                     base_url=settings.openai_base_url,
@@ -161,21 +157,7 @@ async def mailgun_inbound(
                     index_name=settings.azure_search_index_name,
                     embedding_client=embedding_client,
                 )
-                retrieval_result = RetrievalService(search_client=search_client).retrieve_for_extraction(
-                    selected_extraction.extraction
-                )
-                retrieved_contexts = retrieval_result.chunks
-                repository.save_retrieved_contexts(
-                    ingested.process_id,
-                    selected_extraction.document_id,
-                    retrieved_contexts,
-                )
-
-                repository.update_processing_run(
-                    ingested.process_id,
-                    status=ProcessingStage.CLASSIFYING.value,
-                    current_stage=ProcessingStage.CLASSIFYING.value,
-                )
+                retrieval_service = RetrievalService(search_client=search_client)
                 classification_service = ClassificationService(
                     model_registry=registry,
                     prompt_dir=settings.prompt_dir,
@@ -184,27 +166,73 @@ async def mailgun_inbound(
                         base_url=settings.openai_base_url,
                     ),
                 )
-                classification = classification_service.classify_retrieval_result(
-                    selected_extraction.extraction,
-                    retrieval_result,
-                )
+                decision_service = DecisionService()
+                document_outcomes: list[ProcessingOutcome] = []
 
-                repository.update_processing_run(
-                    ingested.process_id,
-                    status=ProcessingStage.DECIDING.value,
-                    current_stage=ProcessingStage.DECIDING.value,
-                )
-                outcome = DecisionService().build_outcome(
-                    process_id=ingested.process_id,
-                    extraction=selected_extraction.extraction,
-                    classification=classification,
-                )
+                for document_extraction in extractions:
+                    active_extraction = document_extraction
+                    repository.update_processing_run(
+                        ingested.process_id,
+                        status=ProcessingStage.RETRIEVING.value,
+                        current_stage=ProcessingStage.RETRIEVING.value,
+                    )
+                    retrieval_result = retrieval_service.retrieve_for_extraction(
+                        document_extraction.extraction
+                    )
+                    retrieved_contexts.extend(retrieval_result.chunks)
+                    repository.save_retrieved_contexts(
+                        ingested.process_id,
+                        document_extraction.document_id,
+                        retrieval_result.chunks,
+                    )
+
+                    repository.update_processing_run(
+                        ingested.process_id,
+                        status=ProcessingStage.CLASSIFYING.value,
+                        current_stage=ProcessingStage.CLASSIFYING.value,
+                    )
+                    document_classification = classification_service.classify_retrieval_result(
+                        document_extraction.extraction,
+                        retrieval_result,
+                    )
+
+                    repository.update_processing_run(
+                        ingested.process_id,
+                        status=ProcessingStage.DECIDING.value,
+                        current_stage=ProcessingStage.DECIDING.value,
+                    )
+                    document_outcome = decision_service.build_outcome(
+                        process_id=ingested.process_id,
+                        extraction=document_extraction.extraction,
+                        classification=document_classification,
+                        retrieved_context_available=bool(retrieval_result.chunks),
+                    )
+                    document_outcomes.append(document_outcome)
+                    document_evaluation = _document_evaluation_from_outcome(
+                        process_id=ingested.process_id,
+                        document_extraction=document_extraction,
+                        retrieved_contexts=retrieval_result.chunks,
+                        outcome=document_outcome,
+                    )
+                    document_evaluations.append(document_evaluation)
+                    persistence_service.save_document_evaluation(document_evaluation)
+
+                if extraction_errors and document_outcomes:
+                    document_outcomes.append(
+                        decision_service.build_outcome(
+                            process_id=ingested.process_id,
+                            extraction=document_outcomes[0].extraction,
+                            classification=document_outcomes[0].classification,
+                            errors=[error.error for error in extraction_errors],
+                        )
+                    )
+
+                outcome = _select_overall_outcome(document_outcomes)
+                classification = outcome.classification
                 persistence_service.save_processing_result(
                     process_id=ingested.process_id,
-                    retrieved_contexts=retrieved_contexts,
                     classification=classification,
                     outcome=outcome,
-                    document_id=selected_extraction.document_id,
                 )
             except (OpenAIClientError, SearchClientError, RetrievalError, ClassificationError) as exc:
                 classification_error = str(exc)
@@ -221,7 +249,7 @@ async def mailgun_inbound(
                 )
                 outcome = DecisionService().build_outcome(
                     process_id=ingested.process_id,
-                    extraction=selected_extraction.extraction,
+                    extraction=active_extraction.extraction,
                     classification=None,
                     errors=[classification_error],
                     failed=True,
@@ -256,6 +284,7 @@ async def mailgun_inbound(
         classification=classification,
         classification_error=classification_error,
         outcome=outcome,
+        document_evaluations=document_evaluations,
         errors=errors,
     )
 
@@ -313,6 +342,44 @@ def _public_attachment(attachment: AttachmentMetadata) -> AttachmentProcessingSu
         content_type=attachment.content_type,
         size_bytes=attachment.size_bytes,
     )
+
+
+def _document_evaluation_from_outcome(
+    *,
+    process_id: str,
+    document_extraction: DocumentExtraction,
+    retrieved_contexts: list[RetrievedContextChunk],
+    outcome: ProcessingOutcome,
+) -> DocumentEvaluation:
+    return DocumentEvaluation(
+        process_id=process_id,
+        document_id=document_extraction.document_id,
+        filename=document_extraction.filename,
+        extraction=document_extraction.extraction,
+        retrieved_contexts=retrieved_contexts,
+        classification=outcome.classification,
+        status=outcome.status,
+        review_required=outcome.review_required,
+        final_action=outcome.final_action,
+        decision_reason=outcome.decision_reason,
+        errors=outcome.errors,
+    )
+
+
+def _select_overall_outcome(outcomes: list[ProcessingOutcome]) -> ProcessingOutcome:
+    return max(outcomes, key=_outcome_priority)
+
+
+def _outcome_priority(outcome: ProcessingOutcome) -> int:
+    if outcome.status == ProcessingStatus.FAILED:
+        return 100
+    return {
+        RoutingAction.LEGAL_REVIEW: 90,
+        RoutingAction.PROCUREMENT_REVIEW: 80,
+        RoutingAction.MANUAL_REVIEW: 70,
+        RoutingAction.AUTO_STORE: 0,
+        None: 0,
+    }[outcome.final_action]
 
 
 def _join_error_messages(errors: object) -> str:

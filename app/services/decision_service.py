@@ -9,7 +9,9 @@ from app.domain.models.classification import ClassificationResult
 from app.domain.models.extraction import ContractExtractionResult
 from app.domain.models.persistence import ProcessingOutcome
 
-DEFAULT_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.75
+DEFAULT_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.65
+DEFAULT_AUTO_STORE_CONFIDENCE_THRESHOLD = 0.80
+DEFAULT_EXTRACTION_CONFIDENCE_THRESHOLD = 0.80
 
 
 class DecisionService:
@@ -18,10 +20,18 @@ class DecisionService:
     def __init__(
         self,
         confidence_threshold: float = DEFAULT_CLASSIFICATION_CONFIDENCE_THRESHOLD,
+        auto_store_confidence_threshold: float = DEFAULT_AUTO_STORE_CONFIDENCE_THRESHOLD,
+        extraction_confidence_threshold: float = DEFAULT_EXTRACTION_CONFIDENCE_THRESHOLD,
     ) -> None:
         if not 0.0 <= confidence_threshold <= 1.0:
             raise ValueError("confidence_threshold must be between 0.0 and 1.0.")
+        if not 0.0 <= auto_store_confidence_threshold <= 1.0:
+            raise ValueError("auto_store_confidence_threshold must be between 0.0 and 1.0.")
+        if not 0.0 <= extraction_confidence_threshold <= 1.0:
+            raise ValueError("extraction_confidence_threshold must be between 0.0 and 1.0.")
         self.confidence_threshold = confidence_threshold
+        self.auto_store_confidence_threshold = auto_store_confidence_threshold
+        self.extraction_confidence_threshold = extraction_confidence_threshold
 
     def build_outcome(
         self,
@@ -29,6 +39,7 @@ class DecisionService:
         process_id: str,
         extraction: ContractExtractionResult,
         classification: ClassificationResult | None,
+        retrieved_context_available: bool = True,
         errors: Sequence[str] | None = None,
         failed: bool = False,
     ) -> ProcessingOutcome:
@@ -69,7 +80,7 @@ class DecisionService:
                 final_action=RoutingAction.MANUAL_REVIEW,
                 decision_reason=(
                     f"Classification confidence {classification.final_confidence:.2f} is below "
-                    f"the {self.confidence_threshold:.2f} routing threshold."
+                    f"the {self.confidence_threshold:.2f} manual review threshold."
                 ),
                 errors=normalized_errors,
             )
@@ -95,6 +106,85 @@ class DecisionService:
                 review_required=True,
                 final_action=RoutingAction.PROCUREMENT_REVIEW,
                 decision_reason="Medium risk classification requires procurement review.",
+                errors=normalized_errors,
+            )
+
+        if not retrieved_context_available:
+            return ProcessingOutcome(
+                process_id=process_id,
+                status=ProcessingStatus.FLAGGED,
+                extraction=extraction,
+                classification=classification,
+                review_required=True,
+                final_action=RoutingAction.MANUAL_REVIEW,
+                decision_reason="No retrieved policy context was available, so manual review is required.",
+                errors=normalized_errors,
+            )
+
+        if extraction.extraction_confidence < self.extraction_confidence_threshold:
+            return ProcessingOutcome(
+                process_id=process_id,
+                status=ProcessingStatus.FLAGGED,
+                extraction=extraction,
+                classification=classification,
+                review_required=True,
+                final_action=RoutingAction.MANUAL_REVIEW,
+                decision_reason=(
+                    f"Extraction confidence {extraction.extraction_confidence:.2f} is below "
+                    f"the {self.extraction_confidence_threshold:.2f} auto-store threshold."
+                ),
+                errors=normalized_errors,
+            )
+
+        if extraction.key_missing_fields:
+            missing_fields = ", ".join(extraction.key_missing_fields)
+            return ProcessingOutcome(
+                process_id=process_id,
+                status=ProcessingStatus.FLAGGED,
+                extraction=extraction,
+                classification=classification,
+                review_required=True,
+                final_action=RoutingAction.MANUAL_REVIEW,
+                decision_reason=f"Required extracted fields are missing: {missing_fields}.",
+                errors=normalized_errors,
+            )
+
+        if classification.policy_conflicts:
+            return ProcessingOutcome(
+                process_id=process_id,
+                status=ProcessingStatus.FLAGGED,
+                extraction=extraction,
+                classification=classification,
+                review_required=True,
+                final_action=RoutingAction.MANUAL_REVIEW,
+                decision_reason="Policy conflicts prevent auto-store.",
+                errors=normalized_errors,
+            )
+
+        if normalized_errors:
+            return ProcessingOutcome(
+                process_id=process_id,
+                status=ProcessingStatus.FLAGGED,
+                extraction=extraction,
+                classification=classification,
+                review_required=True,
+                final_action=RoutingAction.MANUAL_REVIEW,
+                decision_reason="Processing completed with warnings that require manual review.",
+                errors=normalized_errors,
+            )
+
+        if classification.final_confidence < self.auto_store_confidence_threshold:
+            return ProcessingOutcome(
+                process_id=process_id,
+                status=ProcessingStatus.FLAGGED,
+                extraction=extraction,
+                classification=classification,
+                review_required=True,
+                final_action=RoutingAction.MANUAL_REVIEW,
+                decision_reason=(
+                    f"Classification confidence {classification.final_confidence:.2f} is below "
+                    f"the {self.auto_store_confidence_threshold:.2f} auto-store threshold."
+                ),
                 errors=normalized_errors,
             )
 

@@ -12,7 +12,12 @@ from fastapi.testclient import TestClient
 from starlette.datastructures import FormData, Headers, UploadFile
 
 from app.core.config import Settings, get_settings
+from app.domain.enums import RiskLevel, RoutingAction
+from app.domain.models.classification import ClassificationResult
 from app.domain.models.email import AttachmentMetadata
+from app.domain.models.extraction import ContractExtractionResult, DocumentExtraction
+from app.domain.models.retrieval import RetrievedContextChunk, RetrievalResult
+from app.infra.db.repository import PersistenceRepository
 from app.infra.parsers.exceptions import UnsupportedFileTypeError
 from app.infra.parsers.parser_factory import ParserFactory
 from app.infra.parsers.unstructured_parser import UnstructuredParser
@@ -265,3 +270,154 @@ def test_mailgun_webhook_error_response_omits_storage_path(tmp_path: Path) -> No
     assert "storage_path" not in payload["attachments"][0]
     assert payload["errors"][0]["filename"] == "notes.txt"
     assert "storage_path" not in payload["errors"][0]
+
+
+def test_mailgun_webhook_classifies_all_extracted_documents(monkeypatch, tmp_path: Path) -> None:
+    database_url = f"sqlite:///{(tmp_path / 'app.db').as_posix()}"
+
+    class FakeOpenAIClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+    class FakeOpenAIEmbeddingClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+    class FakeAzureSearchClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+    class FakeExtractionService:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def extract_documents(self, documents):
+            extractions = []
+            for index, document in enumerate(documents):
+                vendor_name = "Safe Co" if index == 0 else "Risky Co"
+                extractions.append(
+                    DocumentExtraction(
+                        document_id=document.document_id,
+                        filename=document.filename,
+                        extraction=ContractExtractionResult(
+                            vendor_name=vendor_name,
+                            contract_type="SaaS agreement",
+                            payment_terms="Net 30",
+                            liability_clause=(
+                                "Liability is capped."
+                                if vendor_name == "Safe Co"
+                                else "Liability is uncapped."
+                            ),
+                            key_missing_fields=[],
+                            extraction_confidence=0.95,
+                        ),
+                    )
+                )
+            return extractions, []
+
+    class FakeRetrievalService:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def retrieve_for_extraction(self, extraction):
+            return RetrievalResult(
+                chunks=[
+                    RetrievedContextChunk(
+                        chunk_id=f"{extraction.vendor_name}-policy",
+                        source="policy.md",
+                        doc_type="policy",
+                        clause_type="liability",
+                        content=f"Policy context for {extraction.vendor_name}.",
+                        score=3.0,
+                    )
+                ]
+            )
+
+    class FakeClassificationService:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def classify_retrieval_result(self, extraction, retrieval_result):
+            if extraction.vendor_name == "Risky Co":
+                return ClassificationResult(
+                    risk_level=RiskLevel.HIGH,
+                    policy_conflicts=["Uncapped liability."],
+                    recommended_action=RoutingAction.LEGAL_REVIEW,
+                    rationale="Uncapped liability requires legal review.",
+                    final_confidence=0.95,
+                )
+            return ClassificationResult(
+                risk_level=RiskLevel.LOW,
+                policy_conflicts=[],
+                recommended_action=RoutingAction.AUTO_STORE,
+                rationale="Terms align with policy.",
+                final_confidence=0.95,
+            )
+
+    monkeypatch.setattr("app.api.webhook.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("app.api.webhook.OpenAIEmbeddingClient", FakeOpenAIEmbeddingClient)
+    monkeypatch.setattr("app.api.webhook.AzureSearchClient", FakeAzureSearchClient)
+    monkeypatch.setattr("app.api.webhook.ExtractionService", FakeExtractionService)
+    monkeypatch.setattr("app.api.webhook.RetrievalService", FakeRetrievalService)
+    monkeypatch.setattr("app.api.webhook.ClassificationService", FakeClassificationService)
+
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        upload_dir=tmp_path / "uploads",
+        database_url=database_url,
+    )
+    try:
+        response = TestClient(app).post(
+            "/webhooks/mailgun/inbound?classify=true",
+            data={
+                "sender": "legal@example.com",
+                "recipient": "contracts@example.com",
+                "subject": "Contract review",
+                "body-plain": "Please review.",
+            },
+            files=[
+                (
+                    "attachment-1",
+                    (
+                        "safe.csv",
+                        b"vendor,liability\nSafe Co,capped\n",
+                        "text/csv",
+                    ),
+                ),
+                (
+                    "attachment-2",
+                    (
+                        "risky.csv",
+                        b"vendor,liability\nRisky Co,uncapped\n",
+                        "text/csv",
+                    ),
+                ),
+            ],
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["classification"]["risk_level"] == RiskLevel.HIGH.value
+    assert payload["outcome"]["final_action"] == RoutingAction.LEGAL_REVIEW.value
+    assert len(payload["retrieved_contexts"]) == 2
+    assert [item["filename"] for item in payload["document_evaluations"]] == [
+        "safe.csv",
+        "risky.csv",
+    ]
+    assert payload["document_evaluations"][0]["final_action"] == RoutingAction.AUTO_STORE.value
+    assert payload["document_evaluations"][1]["final_action"] == RoutingAction.LEGAL_REVIEW.value
+    assert payload["document_evaluations"][1]["classification"]["risk_level"] == RiskLevel.HIGH.value
+
+    repository = PersistenceRepository(database_url)
+    try:
+        record = repository.get_process(payload["process_id"])
+    finally:
+        repository.close()
+
+    assert record is not None
+    assert len(record.retrieved_contexts) == 2
+    assert len(record.document_evaluations) == 2
+    assert record.document_evaluations[0].filename == "safe.csv"
+    assert record.document_evaluations[1].final_action == RoutingAction.LEGAL_REVIEW
+    assert record.review_queue[0].review_type == RoutingAction.LEGAL_REVIEW

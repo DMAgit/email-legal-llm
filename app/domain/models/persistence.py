@@ -25,6 +25,22 @@ class ProcessingOutcome(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class DocumentEvaluation(BaseModel):
+    """Per-document classification and deterministic routing result."""
+
+    process_id: str
+    document_id: str
+    filename: str
+    extraction: ContractExtractionResult
+    retrieved_contexts: list[RetrievedContextChunk] = Field(default_factory=list)
+    classification: ClassificationResult | None = None
+    status: ProcessingStatus
+    review_required: bool
+    final_action: RoutingAction | None = None
+    decision_reason: str | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
 class ReviewQueueItem(BaseModel):
     """Persisted manual review queue item."""
 
@@ -56,4 +72,5 @@ class ProcessRecord(BaseModel):
     extractions: list[DocumentExtraction] = Field(default_factory=list)
     retrieved_contexts: list[RetrievedContextChunk] = Field(default_factory=list)
     classification: ClassificationResult | None = None
+    document_evaluations: list[DocumentEvaluation] = Field(default_factory=list)
     review_queue: list[ReviewQueueItem] = Field(default_factory=list)

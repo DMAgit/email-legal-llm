@@ -96,6 +96,23 @@ CREATE TABLE IF NOT EXISTS classifications (
     FOREIGN KEY (process_id) REFERENCES processing_runs(process_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS document_evaluations (
+    process_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    final_action TEXT,
+    review_required INTEGER NOT NULL DEFAULT 0,
+    decision_reason TEXT,
+    errors TEXT NOT NULL DEFAULT '[]',
+    risk_level TEXT,
+    policy_conflicts TEXT NOT NULL DEFAULT '[]',
+    recommended_action TEXT,
+    rationale TEXT,
+    final_confidence REAL,
+    PRIMARY KEY (process_id, document_id),
+    FOREIGN KEY (process_id) REFERENCES processing_runs(process_id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS review_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     process_id TEXT NOT NULL,
@@ -109,6 +126,7 @@ CREATE TABLE IF NOT EXISTS review_queue (
 
 CREATE INDEX IF NOT EXISTS idx_attachments_process_id ON attachments(process_id);
 CREATE INDEX IF NOT EXISTS idx_retrieved_contexts_process_id ON retrieved_contexts(process_id);
+CREATE INDEX IF NOT EXISTS idx_document_evaluations_process_id ON document_evaluations(process_id);
 CREATE INDEX IF NOT EXISTS idx_review_queue_status ON review_queue(status);
 """
 

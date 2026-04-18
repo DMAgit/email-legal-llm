@@ -14,7 +14,12 @@ from app.domain.models.classification import ClassificationResult
 from app.domain.models.document import ParsedDocument
 from app.domain.models.email import AttachmentMetadata, InboundEmail
 from app.domain.models.extraction import ContractExtractionResult, DocumentExtraction
-from app.domain.models.persistence import ProcessRecord, ProcessingOutcome, ReviewQueueItem
+from app.domain.models.persistence import (
+    DocumentEvaluation,
+    ProcessRecord,
+    ProcessingOutcome,
+    ReviewQueueItem,
+)
 from app.domain.models.retrieval import RetrievedContextChunk
 from app.infra.db.base import create_connection
 from app.infra.db.tables import create_schema
@@ -349,6 +354,96 @@ class PersistenceRepository:
         except sqlite3.Error as exc:
             raise PersistenceError(f"Could not save classification for {process_id}: {exc}") from exc
 
+    def save_document_evaluation(self, evaluation: DocumentEvaluation) -> None:
+        """Persist one per-document evaluation and its supporting artifacts."""
+        self.create_processing_run(evaluation.process_id)
+        try:
+            with self.connection:
+                self._save_extraction_row(
+                    evaluation.process_id,
+                    evaluation.document_id,
+                    evaluation.extraction,
+                )
+                self.connection.execute(
+                    "DELETE FROM retrieved_contexts WHERE process_id = ? AND document_id = ?",
+                    (evaluation.process_id, evaluation.document_id),
+                )
+                self.connection.executemany(
+                    """
+                    INSERT INTO retrieved_contexts (
+                        process_id, document_id, chunk_id, source, doc_type,
+                        clause_type, score, content_excerpt
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            evaluation.process_id,
+                            evaluation.document_id,
+                            context.chunk_id,
+                            context.source,
+                            context.doc_type,
+                            context.clause_type,
+                            context.score,
+                            _excerpt(context.content),
+                        )
+                        for context in evaluation.retrieved_contexts
+                    ],
+                )
+                classification = evaluation.classification
+                self.connection.execute(
+                    """
+                    INSERT INTO document_evaluations (
+                        process_id, document_id, status, final_action, review_required,
+                        decision_reason, errors, risk_level, policy_conflicts,
+                        recommended_action, rationale, final_confidence
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(process_id, document_id) DO UPDATE SET
+                        status = excluded.status,
+                        final_action = excluded.final_action,
+                        review_required = excluded.review_required,
+                        decision_reason = excluded.decision_reason,
+                        errors = excluded.errors,
+                        risk_level = excluded.risk_level,
+                        policy_conflicts = excluded.policy_conflicts,
+                        recommended_action = excluded.recommended_action,
+                        rationale = excluded.rationale,
+                        final_confidence = excluded.final_confidence
+                    """,
+                    (
+                        evaluation.process_id,
+                        evaluation.document_id,
+                        evaluation.status.value,
+                        _enum_value(evaluation.final_action),
+                        int(evaluation.review_required),
+                        evaluation.decision_reason,
+                        _json_dump(evaluation.errors),
+                        classification.risk_level.value if classification is not None else None,
+                        _json_dump(
+                            classification.policy_conflicts
+                            if classification is not None
+                            else []
+                        ),
+                        (
+                            classification.recommended_action.value
+                            if classification is not None
+                            else None
+                        ),
+                        classification.rationale if classification is not None else None,
+                        classification.final_confidence if classification is not None else None,
+                    ),
+                )
+        except sqlite3.Error as exc:
+            raise PersistenceError(
+                f"Could not save document evaluation for {evaluation.process_id}/{evaluation.document_id}: {exc}"
+            ) from exc
+
+    def save_document_evaluations(self, evaluations: Sequence[DocumentEvaluation]) -> None:
+        """Persist per-document evaluations."""
+        for evaluation in evaluations:
+            self.save_document_evaluation(evaluation)
+
     def save_outcome(self, outcome: ProcessingOutcome) -> None:
         """Persist final deterministic routing fields."""
         current_stage = None if outcome.status == ProcessingStatus.FAILED else outcome.status.value
@@ -455,6 +550,10 @@ class PersistenceRepository:
                 "SELECT * FROM classifications WHERE process_id = ?",
                 (process_id,),
             ).fetchone()
+            evaluation_rows = self.connection.execute(
+                "SELECT * FROM document_evaluations WHERE process_id = ? ORDER BY document_id",
+                (process_id,),
+            ).fetchall()
             review_rows = self.connection.execute(
                 "SELECT * FROM review_queue WHERE process_id = ? ORDER BY id",
                 (process_id,),
@@ -462,8 +561,45 @@ class PersistenceRepository:
         except sqlite3.Error as exc:
             raise PersistenceError(f"Could not fetch process {process_id}: {exc}") from exc
 
-        documents = [_document_from_row(row) for row in document_rows]
+        attachment_order_by_filename = {
+            row["filename"]: index
+            for index, row in enumerate(attachment_rows)
+        }
+        documents = sorted(
+            [_document_from_row(row) for row in document_rows],
+            key=lambda document: (
+                attachment_order_by_filename.get(document.filename, len(attachment_order_by_filename)),
+                document.document_id,
+            ),
+        )
         filenames_by_document = {document.document_id: document.filename for document in documents}
+        extraction_rows = sorted(
+            extraction_rows,
+            key=lambda row: (
+                attachment_order_by_filename.get(
+                    filenames_by_document.get(row["document_id"], ""),
+                    len(attachment_order_by_filename),
+                ),
+                row["document_id"],
+            ),
+        )
+        evaluation_rows = sorted(
+            evaluation_rows,
+            key=lambda row: (
+                attachment_order_by_filename.get(
+                    filenames_by_document.get(row["document_id"], ""),
+                    len(attachment_order_by_filename),
+                ),
+                row["document_id"],
+            ),
+        )
+        extractions_by_document = {
+            row["document_id"]: _extraction_from_row(row)
+            for row in extraction_rows
+        }
+        contexts_by_document: dict[str, list[RetrievedContextChunk]] = {}
+        for row in context_rows:
+            contexts_by_document.setdefault(row["document_id"], []).append(_context_from_row(row))
         return ProcessRecord(
             process_id=process_id,
             status=run["status"],
@@ -488,6 +624,16 @@ class PersistenceRepository:
                 if classification_row is not None
                 else None
             ),
+            document_evaluations=[
+                _document_evaluation_from_row(
+                    row,
+                    filenames_by_document,
+                    extractions_by_document,
+                    contexts_by_document,
+                )
+                for row in evaluation_rows
+                if row["document_id"] in extractions_by_document
+            ],
             review_queue=[_review_item_from_row(row) for row in review_rows],
         )
 
@@ -601,7 +747,15 @@ def _document_extraction_from_row(
     filenames_by_document: dict[str, str],
 ) -> DocumentExtraction:
     document_id = row["document_id"]
-    extraction = ContractExtractionResult(
+    return DocumentExtraction(
+        document_id=document_id,
+        filename=filenames_by_document.get(document_id, ""),
+        extraction=_extraction_from_row(row),
+    )
+
+
+def _extraction_from_row(row: sqlite3.Row) -> ContractExtractionResult:
+    return ContractExtractionResult(
         vendor_name=row["vendor_name"],
         contract_type=row["contract_type"],
         payment_terms=row["payment_terms"],
@@ -612,11 +766,6 @@ def _document_extraction_from_row(
         data_usage_clause=row["data_usage_clause"],
         key_missing_fields=_json_load(row["key_missing_fields"]),
         extraction_confidence=row["extraction_confidence"],
-    )
-    return DocumentExtraction(
-        document_id=document_id,
-        filename=filenames_by_document.get(document_id, ""),
-        extraction=extraction,
     )
 
 
@@ -638,6 +787,37 @@ def _classification_from_row(row: sqlite3.Row) -> ClassificationResult:
         recommended_action=row["recommended_action"],
         rationale=row["rationale"],
         final_confidence=row["final_confidence"],
+    )
+
+
+def _document_evaluation_from_row(
+    row: sqlite3.Row,
+    filenames_by_document: dict[str, str],
+    extractions_by_document: dict[str, ContractExtractionResult],
+    contexts_by_document: dict[str, list[RetrievedContextChunk]],
+) -> DocumentEvaluation:
+    document_id = row["document_id"]
+    classification = None
+    if row["risk_level"] is not None:
+        classification = ClassificationResult(
+            risk_level=row["risk_level"],
+            policy_conflicts=_json_load(row["policy_conflicts"]),
+            recommended_action=row["recommended_action"],
+            rationale=row["rationale"],
+            final_confidence=row["final_confidence"],
+        )
+    return DocumentEvaluation(
+        process_id=row["process_id"],
+        document_id=document_id,
+        filename=filenames_by_document.get(document_id, ""),
+        extraction=extractions_by_document[document_id],
+        retrieved_contexts=contexts_by_document.get(document_id, []),
+        classification=classification,
+        status=row["status"],
+        review_required=bool(row["review_required"]),
+        final_action=row["final_action"],
+        decision_reason=row["decision_reason"],
+        errors=_json_load(row["errors"]),
     )
 
 

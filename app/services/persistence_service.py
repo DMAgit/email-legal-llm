@@ -9,7 +9,7 @@ from app.domain.models.classification import ClassificationResult
 from app.domain.models.document import DocumentParseError, ParsedDocument
 from app.domain.models.email import AttachmentMetadata, InboundEmail
 from app.domain.models.extraction import DocumentExtraction, DocumentExtractionError
-from app.domain.models.persistence import ProcessingOutcome, ReviewQueueItem
+from app.domain.models.persistence import DocumentEvaluation, ProcessingOutcome, ReviewQueueItem
 from app.domain.models.retrieval import RetrievedContextChunk, RetrievalResult
 from app.infra.db.repository import PersistenceRepository
 
@@ -42,11 +42,17 @@ class PersistenceService:
         """Persist parsed document artifacts and parser warning state."""
         self.repository.save_parsed_documents(process_id, documents)
         if errors and not documents:
+            error_message = _join_errors(error.error for error in errors)
             self.repository.record_failure(
                 process_id,
                 current_stage=ProcessingStage.PARSING.value,
                 error_type="DocumentParseError",
-                error_message=_join_errors(error.error for error in errors),
+                error_message=error_message,
+            )
+            self.repository.create_review_queue_item(
+                process_id,
+                review_type=RoutingAction.MANUAL_REVIEW,
+                reason=error_message or "No parsed documents were available.",
             )
         elif errors:
             self.repository.update_processing_run(
@@ -105,6 +111,7 @@ class PersistenceService:
         retrieved_contexts: Sequence[RetrievedContextChunk] | RetrievalResult = (),
         classification: ClassificationResult | None = None,
         outcome: ProcessingOutcome,
+        document_evaluations: Sequence[DocumentEvaluation] = (),
         document_id: str | None = None,
     ) -> ReviewQueueItem | None:
         """Persist all important artifacts and the final deterministic outcome."""
@@ -124,8 +131,14 @@ class PersistenceService:
             self.repository.save_retrieved_contexts(process_id, resolved_document_id, contexts)
         if classification is not None:
             self.repository.save_classification(process_id, classification)
+        if document_evaluations:
+            self.repository.save_document_evaluations(document_evaluations)
 
         return self.save_outcome(process_id=process_id, outcome=outcome)
+
+    def save_document_evaluation(self, evaluation: DocumentEvaluation) -> None:
+        """Persist one per-document evaluation."""
+        self.repository.save_document_evaluation(evaluation)
 
     def save_outcome(
         self,
@@ -138,7 +151,7 @@ class PersistenceService:
             return None
 
         review_type = outcome.final_action or RoutingAction.MANUAL_REVIEW
-        reason = outcome.decision_reason or _join_errors(outcome.errors) or "Manual review required."
+        reason = _join_errors(outcome.errors) or outcome.decision_reason or "Manual review required."
         return self.repository.create_review_queue_item(
             process_id,
             review_type=review_type,

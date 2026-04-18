@@ -5,7 +5,7 @@ from app.domain.models.document import DocumentParseError, ParsedDocument
 from app.domain.models.email import AttachmentMetadata, InboundEmail
 from app.domain.models.extraction import ContractExtractionResult, DocumentExtraction, DocumentExtractionError
 from app.domain.models.ingestion import AttachmentProcessingSummary, InboundEmailProcessingResult
-from app.domain.models.persistence import ProcessRecord, ProcessingOutcome, ReviewQueueItem
+from app.domain.models.persistence import DocumentEvaluation, ProcessRecord, ProcessingOutcome, ReviewQueueItem
 from app.domain.models.retrieval import RetrievedContextChunk, RetrievalResult
 
 __all__ = [
@@ -15,6 +15,7 @@ __all__ = [
     "ContractExtractionResult",
     "DocumentExtraction",
     "DocumentExtractionError",
+    "DocumentEvaluation",
     "DocumentParseError",
     "InboundEmail",
     "InboundEmailProcessingResult",

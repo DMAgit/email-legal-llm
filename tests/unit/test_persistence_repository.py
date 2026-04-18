@@ -10,9 +10,10 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings, get_settings
 from app.domain.enums import ProcessingStage, ProcessingStatus, RiskLevel, RoutingAction
 from app.domain.models.classification import ClassificationResult
-from app.domain.models.document import ParsedDocument
+from app.domain.models.document import DocumentParseError, ParsedDocument
 from app.domain.models.email import AttachmentMetadata, InboundEmail
 from app.domain.models.extraction import ContractExtractionResult, DocumentExtraction
+from app.domain.models.persistence import DocumentEvaluation
 from app.domain.models.retrieval import RetrievedContextChunk
 from app.infra.db.repository import PersistenceRepository
 from app.main import app
@@ -128,6 +129,21 @@ def test_repository_saves_and_fetches_completed_run(tmp_path: Path) -> None:
             retrieved_contexts=[_context()],
             classification=classification,
             outcome=outcome,
+            document_evaluations=[
+                DocumentEvaluation(
+                    process_id="process-1",
+                    document_id=document.document_id,
+                    filename=document.filename,
+                    extraction=extraction,
+                    retrieved_contexts=[_context()],
+                    classification=classification,
+                    status=outcome.status,
+                    review_required=outcome.review_required,
+                    final_action=outcome.final_action,
+                    decision_reason=outcome.decision_reason,
+                    errors=outcome.errors,
+                )
+            ],
         )
 
         record = repository.get_process("process-1")
@@ -144,6 +160,10 @@ def test_repository_saves_and_fetches_completed_run(tmp_path: Path) -> None:
     assert record.retrieved_contexts[0].chunk_id == "liability-policy"
     assert record.classification is not None
     assert record.classification.risk_level == RiskLevel.LOW
+    assert record.document_evaluations[0].document_id == "doc-1"
+    assert record.document_evaluations[0].filename == "contract.csv"
+    assert record.document_evaluations[0].final_action == RoutingAction.AUTO_STORE
+    assert record.document_evaluations[0].retrieved_contexts[0].chunk_id == "liability-policy"
     assert record.review_queue == []
 
 
@@ -213,6 +233,64 @@ def test_failed_run_preserves_error_stage_and_message(tmp_path: Path) -> None:
     assert record.error_type == "RetrievalError"
     assert record.error_message == "Search index unavailable."
     assert record.review_queue[0].review_type == RoutingAction.MANUAL_REVIEW
+
+
+def test_parse_only_failure_creates_review_queue_entry(tmp_path: Path) -> None:
+    repository = PersistenceRepository(_db_url(tmp_path / "app.db"))
+    service = PersistenceService(repository)
+
+    try:
+        repository.create_processing_run("process-parse-error")
+        service.save_parsing_result(
+            process_id="process-parse-error",
+            documents=[],
+            errors=[
+                DocumentParseError(
+                    filename="notes.txt",
+                    file_type=None,
+                    parser_name=None,
+                    error="Unsupported attachment type.",
+                )
+            ],
+        )
+        record = repository.get_process("process-parse-error")
+        review_items = repository.list_review_queue()
+    finally:
+        repository.close()
+
+    assert record is not None
+    assert record.status == ProcessingStatus.FAILED.value
+    assert record.review_required is True
+    assert record.review_queue[0].reason == "Unsupported attachment type."
+    assert review_items[0].process_id == "process-parse-error"
+
+
+def test_failed_outcome_keeps_specific_review_reason(tmp_path: Path) -> None:
+    repository = PersistenceRepository(_db_url(tmp_path / "app.db"))
+    service = PersistenceService(repository)
+    error_message = "Azure AI Search index not found: contract-kb."
+    outcome = DecisionService().build_outcome(
+        process_id="process-specific-error",
+        extraction=_extraction(),
+        classification=None,
+        errors=[error_message],
+        failed=True,
+    )
+
+    try:
+        service.save_failed_run(
+            process_id="process-specific-error",
+            current_stage=ProcessingStage.RETRIEVING.value,
+            error_type="SearchIndexNotFoundError",
+            error_message=error_message,
+        )
+        service.save_outcome("process-specific-error", outcome)
+        record = repository.get_process("process-specific-error")
+    finally:
+        repository.close()
+
+    assert record is not None
+    assert record.review_queue[0].reason == error_message
 
 
 def test_process_status_endpoint_returns_persisted_record(tmp_path: Path) -> None:

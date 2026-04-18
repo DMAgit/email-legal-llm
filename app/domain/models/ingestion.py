@@ -6,7 +6,7 @@ from app.domain.models.document import DocumentParseError, ParsedDocument
 from app.domain.models.classification import ClassificationResult
 from app.domain.models.email import InboundEmail
 from app.domain.models.extraction import DocumentExtraction, DocumentExtractionError
-from app.domain.models.persistence import ProcessingOutcome
+from app.domain.models.persistence import DocumentEvaluation, ProcessingOutcome
 from app.domain.models.retrieval import RetrievedContextChunk
 
 
@@ -31,4 +31,5 @@ class InboundEmailProcessingResult(BaseModel):
     classification: ClassificationResult | None = None
     classification_error: str | None = None
     outcome: ProcessingOutcome | None = None
+    document_evaluations: list[DocumentEvaluation] = Field(default_factory=list)
     errors: list[DocumentParseError] = Field(default_factory=list)
