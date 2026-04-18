@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -63,16 +65,6 @@ def main() -> int:
     """Run the local demo and return a process exit code."""
     _configure_stdout()
     args = _parse_args()
-    settings = Settings()
-
-    missing_settings = _missing_live_settings(settings)
-    if missing_settings:
-        print("=== Contract Risk Analyzer Demo ===\n")
-        print("Missing required live settings:")
-        for name in missing_settings:
-            print(f"- {name}")
-        print("\nSet these in .env, seed Azure AI Search, then run the demo again.")
-        return 2
 
     missing_files = _missing_files(DEMO_CASES)
     if missing_files:
@@ -80,6 +72,19 @@ def main() -> int:
         print("Missing demo contract files:")
         for path in missing_files:
             print(f"- {path}")
+        return 2
+
+    if args.base_url:
+        return _run_live_demo(_normalize_base_url(args.base_url))
+
+    settings = Settings()
+    missing_settings = _missing_live_settings(settings)
+    if missing_settings:
+        print("=== Contract Risk Analyzer Demo ===\n")
+        print("Missing required live settings:")
+        for name in missing_settings:
+            print(f"- {name}")
+        print("\nSet these in .env, seed Azure AI Search, then run the demo again.")
         return 2
 
     if args.keep_artifacts:
@@ -99,11 +104,21 @@ def main() -> int:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--base-url",
+        help=(
+            "Send demo requests to a running API server, for example "
+            "http://127.0.0.1:8000. This updates that server's /metrics counters."
+        ),
+    )
+    parser.add_argument(
         "--keep-artifacts",
         action="store_true",
         help="Store demo uploads and SQLite records under data/demo_* instead of a temp directory.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.base_url and args.keep_artifacts:
+        parser.error("--keep-artifacts only applies when running the in-process demo.")
+    return args
 
 
 def _run_demo(settings: Settings, *, upload_dir: Path, database_url: str) -> int:
@@ -117,28 +132,48 @@ def _run_demo(settings: Settings, *, upload_dir: Path, database_url: str) -> int
     app.dependency_overrides[get_settings] = lambda: demo_settings
 
     print("=== Contract Risk Analyzer Demo ===\n")
-    exit_code = 0
     try:
         client = TestClient(app)
-        for index, demo_case in enumerate(DEMO_CASES, start=1):
-            result = _run_case(client, demo_case)
-            if result.action != demo_case.expected_action:
-                exit_code = 1
-            _print_case(index, demo_case, result)
+        return _run_cases(client)
     finally:
         app.dependency_overrides.clear()
+
+
+def _run_live_demo(base_url: str) -> int:
+    try:
+        import httpx
+    except ModuleNotFoundError:
+        print("=== Contract Risk Analyzer Demo ===\n")
+        print("The httpx package is required for --base-url mode.")
+        return 2
+
+    webhook_secret = Settings().mailgun_webhook_secret
+    print("=== Contract Risk Analyzer Demo ===\n")
+    try:
+        with httpx.Client(base_url=base_url, timeout=300.0) as client:
+            return _run_cases(client, webhook_secret=webhook_secret)
+    except httpx.RequestError as exc:
+        print(f"Could not reach API server at {base_url}: {_truncate(str(exc))}")
+        return 2
+
+
+def _run_cases(client: Any, webhook_secret: str | None = None) -> int:
+    exit_code = 0
+    for index, demo_case in enumerate(DEMO_CASES, start=1):
+        result = _run_case(client, demo_case, webhook_secret=webhook_secret)
+        if result.action != demo_case.expected_action:
+            exit_code = 1
+        _print_case(index, demo_case, result)
     return exit_code
 
 
-def _run_case(client: TestClient, demo_case: DemoCase) -> DemoResult:
+def _run_case(
+    client: Any,
+    demo_case: DemoCase,
+    webhook_secret: str | None = None,
+) -> DemoResult:
     path = REPO_ROOT / demo_case.path
-    data = {
-        "sender": "demo@example.com",
-        "recipient": "contracts@example.com",
-        "subject": demo_case.title,
-        "body-plain": "Please review this demo contract.",
-        "attachment-count": "1",
-    }
+    data = _mailgun_form_data(demo_case.title, webhook_secret=webhook_secret)
     with path.open("rb") as file:
         response = client.post(
             "/webhooks/mailgun/inbound?classify=true",
@@ -153,6 +188,35 @@ def _run_case(client: TestClient, demo_case: DemoCase) -> DemoResult:
     outcome = payload.get("outcome")
     action = outcome.get("final_action") if isinstance(outcome, dict) else None
     return DemoResult(action=action, error=_payload_error(payload))
+
+
+def _mailgun_form_data(title: str, webhook_secret: str | None = None) -> dict[str, str]:
+    data = {
+        "sender": "demo@example.com",
+        "recipient": "contracts@example.com",
+        "subject": title,
+        "body-plain": "Please review this demo contract.",
+        "attachment-count": "1",
+    }
+    secret = webhook_secret.strip() if webhook_secret else ""
+    if not secret:
+        return data
+
+    timestamp = str(int(time.time()))
+    token = "demo-token"
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        f"{timestamp}{token}".encode("utf-8"),
+        "sha256",
+    ).hexdigest()
+    data.update(
+        {
+            "timestamp": timestamp,
+            "token": token,
+            "signature": signature,
+        }
+    )
+    return data
 
 
 def _print_case(index: int, demo_case: DemoCase, result: DemoResult) -> None:
@@ -214,6 +278,15 @@ def _missing_files(demo_cases: tuple[DemoCase, ...]) -> list[Path]:
         for demo_case in demo_cases
         if not (REPO_ROOT / demo_case.path).exists()
     ]
+
+
+def _normalize_base_url(base_url: str) -> str:
+    normalized = base_url.strip().rstrip("/")
+    if not normalized:
+        return normalized
+    if normalized.startswith(("http://", "https://")):
+        return normalized
+    return f"http://{normalized}"
 
 
 def _truncate(value: str, limit: int = 220) -> str:

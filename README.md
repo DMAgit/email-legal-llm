@@ -128,7 +128,13 @@ After setting `OPENAI_API_KEY`, Azure AI Search settings, and seeding the demo K
 .\.venv\Scripts\python.exe scripts\demo_contract_risk.py
 ```
 
-The script runs the three bundled PDF contracts through the same webhook workflow and prints expected versus actual routing:
+By default, the script runs the app in-process with temporary uploads and SQLite storage. To send the demo through a running API server and update that server's `/metrics` endpoint, start the API and pass `--base-url`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\demo_contract_risk.py --base-url http://127.0.0.1:8000
+```
+
+The script runs the three bundled PDF contracts through the webhook workflow and prints expected versus actual routing:
 
 ```text
 === Contract Risk Analyzer Demo ===
