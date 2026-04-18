@@ -4,9 +4,9 @@ Email-driven contract risk analyzer foundation for a take-home style project.
 
 The current milestone accepts inbound Mailgun-style email webhooks, stores
 attachments locally, detects PDF/image/CSV files, parses attachments into
-normalized raw text and chunks, extracts structured contract fields through the
-OpenAI API, retrieves policy context from Azure AI Search, and classifies
-contract risk with a structured result.
+normalized raw text, extracts structured contract fields through the OpenAI API,
+retrieves policy context from Azure AI Search, and classifies contract risk with
+a structured result.
 
 ## Local Setup
 
@@ -37,9 +37,9 @@ The Mailgun webhook expects multipart form fields such as `sender`,
 include Mailgun `timestamp`, `token`, and `signature` fields. Files are stored
 under `data/uploads/{process_id}/`.
 
-Attachment parsing and chunking use the Unstructured open source library.
-Image/PDF OCR quality depends on the local Unstructured extras and system OCR
-support available on the host.
+Attachment parsing uses the Unstructured open source library to produce raw
+text and table metadata. Image/PDF OCR quality depends on the local Unstructured
+extras and system OCR support available on the host.
 
 Structured extraction uses `config/models/extraction.yaml`,
 `app/infra/llm/prompts/extraction_prompt.yaml`, and the OpenAI SDK. Set

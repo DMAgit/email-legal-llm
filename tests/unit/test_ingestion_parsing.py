@@ -54,7 +54,7 @@ def test_parser_factory_selects_supported_types(tmp_path: Path) -> None:
         raise AssertionError("Unsupported files should not get a parser.")
 
 
-def test_unstructured_parser_returns_text_chunks_and_table_metadata(tmp_path: Path) -> None:
+def test_unstructured_parser_returns_text_and_table_metadata(tmp_path: Path) -> None:
     csv_path = tmp_path / "contract.csv"
     csv_path.write_text("vendor,amount\nAcme Legal,1200\n", encoding="utf-8")
     metadata = AttachmentMetadata(
@@ -67,10 +67,8 @@ def test_unstructured_parser_returns_text_chunks_and_table_metadata(tmp_path: Pa
     parsed = UnstructuredParser(file_type="csv").parse(csv_path, metadata)
 
     assert parsed.file_type == "csv"
-    assert parsed.parser_name == "unstructured_partition_chunk_parser"
+    assert parsed.parser_name == "unstructured_partition_parser"
     assert "Acme Legal" in parsed.raw_text
-    assert parsed.chunks[0].text == parsed.raw_text
-    assert parsed.chunks[0].element_type == "Table"
     assert "<table>" in parsed.extracted_tables[0]["html"]
 
 
@@ -199,9 +197,9 @@ def test_mailgun_webhook_stores_and_parses_csv(tmp_path: Path) -> None:
     assert payload["attachments"][0]["filename"] == "contract.csv"
     assert "storage_path" not in payload["attachments"][0]
     assert payload["documents"][0]["file_type"] == "csv"
-    assert payload["documents"][0]["parser_name"] == "unstructured_partition_chunk_parser"
+    assert payload["documents"][0]["parser_name"] == "unstructured_partition_parser"
     assert "Acme" in payload["documents"][0]["raw_text"]
-    assert payload["documents"][0]["chunks"][0]["element_type"] == "Table"
+    assert "chunks" not in payload["documents"][0]
     assert payload["errors"] == []
 
 

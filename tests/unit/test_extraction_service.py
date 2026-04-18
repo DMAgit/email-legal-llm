@@ -67,7 +67,7 @@ def _parsed_document(raw_text: str = "Vendor: Acme Corp\nPayment Terms: Net 60")
         document_id="doc-1",
         filename="contract.csv",
         file_type="csv",
-        parser_name="unstructured_partition_chunk_parser",
+        parser_name="unstructured_partition_parser",
         raw_text=raw_text,
         extracted_tables=[
             {

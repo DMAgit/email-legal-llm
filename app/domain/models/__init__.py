@@ -1,7 +1,7 @@
 """Pydantic domain models for emails, documents, and pipeline outcomes."""
 
 from app.domain.models.classification import ClassificationResult
-from app.domain.models.document import DocumentChunk, DocumentParseError, ParsedDocument
+from app.domain.models.document import DocumentParseError, ParsedDocument
 from app.domain.models.email import AttachmentMetadata, InboundEmail
 from app.domain.models.extraction import ContractExtractionResult, DocumentExtraction, DocumentExtractionError
 from app.domain.models.ingestion import AttachmentProcessingSummary, InboundEmailProcessingResult
@@ -13,7 +13,6 @@ __all__ = [
     "AttachmentMetadata",
     "ClassificationResult",
     "ContractExtractionResult",
-    "DocumentChunk",
     "DocumentExtraction",
     "DocumentExtractionError",
     "DocumentParseError",

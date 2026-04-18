@@ -1,12 +1,11 @@
-"""Document extraction and chunking through the Unstructured library."""
+"""Document text extraction through the Unstructured library."""
 
 from __future__ import annotations
 
-from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from app.domain.models.document import DocumentChunk, ParsedDocument
+from app.domain.models.document import ParsedDocument
 from app.domain.models.email import AttachmentMetadata
 from app.infra.parsers.base import document_id_for_path
 from app.infra.parsers.exceptions import ParserDependencyError, ParserError
@@ -18,26 +17,16 @@ GENERIC_CONTENT_TYPES = {
 
 
 class UnstructuredParser:
-    """Extract elements and RAG-ready chunks with `unstructured`."""
+    """Extract raw text and table metadata with `unstructured`."""
 
-    parser_name = "unstructured_partition_chunk_parser"
+    parser_name = "unstructured_partition_parser"
 
-    def __init__(
-        self,
-        file_type: str,
-        max_characters: int = 1500,
-        new_after_n_chars: int = 1000,
-        overlap: int = 100,
-    ) -> None:
+    def __init__(self, file_type: str) -> None:
         self.file_type = file_type
-        self.max_characters = max_characters
-        self.new_after_n_chars = new_after_n_chars
-        self.overlap = overlap
 
     def parse(self, path: Path, metadata: AttachmentMetadata) -> ParsedDocument:
-        """Partition a stored attachment and then chunk the resulting elements."""
+        """Partition a stored attachment into raw text and table metadata."""
         try:
-            from unstructured.chunking.basic import chunk_elements
             from unstructured.partition.auto import partition
         except ModuleNotFoundError as exc:
             raise ParserDependencyError("Document parsing requires the unstructured package.") from exc
@@ -46,12 +35,6 @@ class UnstructuredParser:
             elements = partition(
                 filename=str(path),
                 content_type=self._partition_content_type(metadata),
-            )
-            chunks = chunk_elements(
-                elements,
-                max_characters=self.max_characters,
-                new_after_n_chars=self.new_after_n_chars,
-                overlap=self.overlap,
             )
         except Exception as exc:
             raise ParserError(f"Unstructured failed to parse {metadata.filename}: {exc}") from exc
@@ -66,7 +49,6 @@ class UnstructuredParser:
             file_type=self.file_type,
             parser_name=self.parser_name,
             raw_text=raw_text,
-            chunks=self._document_chunks(document_id, chunks),
             extracted_tables=self._tables(elements),
             parse_warnings=warnings,
             confidence_hint=0.9 if raw_text else 0.3,
@@ -84,25 +66,6 @@ class UnstructuredParser:
 
     def _raw_text(self, elements: list[Any]) -> str:
         return "\n\n".join(text for element in elements if (text := str(element).strip()))
-
-    def _document_chunks(self, document_id: str, chunks: list[Any]) -> list[DocumentChunk]:
-        document_chunks: list[DocumentChunk] = []
-        for index, chunk in enumerate(chunks):
-            text = str(chunk).strip()
-            if not text:
-                continue
-
-            document_chunks.append(
-                DocumentChunk(
-                    chunk_id=self._chunk_id(document_id, index, text),
-                    index=index,
-                    text=text,
-                    element_type=self._element_type(chunk),
-                    metadata=self._metadata_dict(chunk),
-                )
-            )
-
-        return document_chunks
 
     def _tables(self, elements: list[Any]) -> list[dict[str, Any]]:
         tables: list[dict[str, Any]] = []
@@ -122,10 +85,6 @@ class UnstructuredParser:
             )
 
         return tables
-
-    def _chunk_id(self, document_id: str, index: int, text: str) -> str:
-        digest = sha256(f"{document_id}:{index}:{text}".encode("utf-8")).hexdigest()
-        return digest[:16]
 
     def _element_type(self, element: Any) -> str:
         return str(getattr(element, "category", None) or element.__class__.__name__)
