@@ -1,0 +1,10 @@
+vendor_name,status,tier,risk_level,notes
+Acme Hosting Ltd.,approved,tier_2,low,Standard SaaS hosting vendor with approved commercial model and no material policy exceptions.
+Northstar Solutions Inc.,approved,tier_2,low,Included as a known low-risk counterparty for clean demo scenarios.
+BluePeak Analytics GmbH,watchlist,tier_1,high,Commercial terms often include annual prepayment long renewal notice and list-price renewal increases.
+DataForge AI Inc.,blocked,tier_1,high,AI vendor associated with prohibited training language and elevated privacy review requirements.
+QuantumOps Services Ltd.,conditional,tier_2,medium,Acceptable for lower-risk services only when incorporated terms security exhibit and DPA are present.
+VertexCloud Technologies Inc.,conditional,tier_2,medium,Prior drafts showed mixed liability and renewal language requiring closer review.
+Atlas Retail Group,approved,tier_3,low,Low-risk customer entity used in demo documents and OCR edge-case testing.
+Helix Financial Systems,approved,tier_1,medium,Sensitive financial-services context requires careful review of data usage and security terms.
+BrightPath Logistics Ltd.,approved,tier_3,low,Commercially straightforward customer entity used in procurement-review scenarios.

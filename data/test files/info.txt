@@ -1,0 +1,4 @@
+data\test files\saas_master_services_agreement_northstar_acme.pdf - safe (should Auto-store)
+data\test files\vendor_services_agreement_brightpath_bluepeak.pdf - Medium (should Procurement Review)
+data\test files\saas_ai_services_agreement_specimen_northstar_dataforge.pdf - High risk (should Legal Review)
+data\test files\helix_vertexcloud_saas_agreement.pdf - Conflicting Clauses Contract (should Manual Review)

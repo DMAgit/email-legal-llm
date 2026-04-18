@@ -1,0 +1,8 @@
+name: classification
+provider: openai
+model: gpt-4o-mini
+temperature: 0.1
+max_output_tokens: 1200
+timeout_seconds: 45
+response_schema: ClassificationResult
+prompt_template: classification_prompt_v1
