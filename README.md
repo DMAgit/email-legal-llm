@@ -83,6 +83,17 @@ Demo policy and reference files live in `data/kb/` and are used to seed Azure AI
 * historical review examples
 * legal playbook guidance
 
+### How Retrieval Works
+
+RAG search starts after structured extraction. The app does not generate or use
+pregenerated search questions; instead, it uses the non-empty extracted contract
+fields as search queries, such as liability, payment terms, data usage,
+termination, renewal, governing law, vendor name, and contract type.
+
+Each query runs through Azure AI Search as hybrid keyword plus vector search,
+with clause-type filters where available. The best KB chunks are deduplicated,
+ranked, saved for auditability, and passed to the classifier as policy context.
+
 To inspect generated Azure AI Search documents without uploading:
 
 ```powershell
@@ -119,6 +130,38 @@ The metrics endpoint returns runtime uptime, HTTP request counts and durations, 
 The webhook accepts Mailgun-style multipart form payloads, so local development does not require a live Mailgun account. You can test with Postman, `curl`, or a small helper script.
 
 Ready-made sample contracts live in `data/test files/`.
+
+### Demo Script
+
+After setting `OPENAI_API_KEY`, Azure AI Search settings, and seeding the demo KB, run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\demo_contract_risk.py
+```
+
+By default, the script runs the app in-process with temporary uploads and SQLite storage. To send the demo through a running API server and update that server's `/metrics` endpoint, start the API and pass `--base-url`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\demo_contract_risk.py --base-url http://127.0.0.1:8000
+```
+
+The script runs the three bundled PDF contracts through the webhook workflow and prints expected versus actual routing:
+
+```text
+=== Contract Risk Analyzer Demo ===
+
+[1] Clean SaaS Agreement (Acme Hosting)
+→ Expected: auto_store
+→ Result: auto_store ✅
+
+[2] Analytics Vendor Contract (BluePeak)
+→ Expected: procurement_review
+→ Result: procurement_review ⚠️
+
+[3] AI Vendor Contract (DataForge)
+→ Expected: legal_review
+→ Result: legal_review 🚨
+```
 
 ### Postman
 
