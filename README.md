@@ -2,6 +2,8 @@
 
 Email-driven contract risk analyzer for a take-home style project. The FastAPI app receives Mailgun-compatible inbound email webhooks, stores attachments, parses PDF, image, and CSV files, extracts structured contract fields with OpenAI, retrieves policy context from Azure AI Search, classifies risk, routes the outcome with deterministic rules, and persists an auditable trail in SQLite.
 
+Demo: https://youtu.be/m4SvW9ebT8U
+
 ## Architecture
 
 The app keeps transport, domain logic, infrastructure, and persistence clearly separated:
