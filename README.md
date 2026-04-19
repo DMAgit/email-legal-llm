@@ -83,6 +83,17 @@ Demo policy and reference files live in `data/kb/` and are used to seed Azure AI
 * historical review examples
 * legal playbook guidance
 
+### How Retrieval Works
+
+RAG search starts after structured extraction. The app does not generate or use
+pregenerated search questions; instead, it uses the non-empty extracted contract
+fields as search queries, such as liability, payment terms, data usage,
+termination, renewal, governing law, vendor name, and contract type.
+
+Each query runs through Azure AI Search as hybrid keyword plus vector search,
+with clause-type filters where available. The best KB chunks are deduplicated,
+ranked, saved for auditability, and passed to the classifier as policy context.
+
 To inspect generated Azure AI Search documents without uploading:
 
 ```powershell
